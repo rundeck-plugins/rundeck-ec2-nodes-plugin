@@ -1,0 +1,64 @@
+apply plugin: 'java'
+sourceCompatibility = 1.5
+version = '1.0'
+defaultTasks 'clean', 'build'
+rundeckPluginVersion = '1.0'
+
+configurations{
+    //declare custom pluginLibs configuration to include only libs for this plugin
+    pluginLibs
+
+    //declare compile to extend from pluginLibs so it inherits the dependencies
+    compile{
+        extendsFrom pluginLibs
+    }
+}
+repositories {
+    mavenCentral()
+    flatDir name: 'localRepository', dirs: "$projectDir/lib"
+    
+    add(new org.apache.ivy.plugins.resolver.FileSystemResolver()) {
+        name = 'thirdparty'
+        addArtifactPattern "$projectDir/third-party/[module]-[revision]/[module]-[revision](-[classifier]).[ext]"
+        descriptor = 'optional'
+        checkmodified = true
+    }
+}
+dependencies {
+    pluginLibs group: 'commons-beanutils', name: 'commons-beanutils', version: '1.7.0'
+    pluginLibs group: 'commons-httpclient', name: 'commons-httpclient', version: '3.0.1'
+    pluginLibs group: 'dom4j', name: 'dom4j', version: '1.6.1'
+    pluginLibs group: 'apache-log4j', name: 'apache-log4j', version: '1.2.15'
+    pluginLibs group: 'jackson-core-asl', name: 'jackson-core-asl', version: '1.4.3'
+    pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
+    pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
+    pluginLibs group: 'aws-java-sdk', name: 'aws-java-sdk', version: '1.0.12'
+    
+    compile group: 'rundeck-core', name: 'rundeck-core', version: '1.4.0'
+}
+
+// task to copy plugin libs to output/lib dir
+task copyToLib(type: Copy) {
+    into "$buildDir/output/lib"
+    from configurations.pluginLibs
+}
+
+
+jar {
+    //include contents of output dir
+    from "$buildDir/output"
+    manifest {
+        attributes 'Rundeck-Plugin-Version': rundeckPluginVersion, 'Rundeck-Plugin-Archive': 'true'
+        //create space-separated list of pluginLibs
+        def libList = configurations.pluginLibs.collect{'lib/'+it.name}.join(' ')
+        attributes 'Rundeck-Plugin-Classnames': 'com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory', 'Rundeck-Plugin-Libs': "${libList}"
+    }
+}
+
+//set jar task to depend on copyToLib
+jar.dependsOn(copyToLib)
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '0.9-rc-3'
+    jarPath = 'wrapper'
+}
