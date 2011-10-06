@@ -170,10 +170,11 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             }
             return iNodeSet;
         }
-        if (queryAsync && null == futureResult) {
+        if (lastRefresh > 0 && queryAsync && null == futureResult) {
             futureResult = mapper.performQueryAsync();
             lastRefresh = System.currentTimeMillis();
-        } else if (!queryAsync) {
+        } else if (!queryAsync || lastRefresh < 1) {
+            //always perform synchronous query the first time
             iNodeSet = mapper.performQuery();
             lastRefresh = System.currentTimeMillis();
         }
