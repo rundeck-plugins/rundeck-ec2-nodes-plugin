@@ -1,7 +1,7 @@
 Rundeck EC2 Nodes Plugin
 ========================
 
-Version: 1.0
+Version: 1.2
 
 This is a Resource Model Source plugin for [RunDeck][] 1.4+ that provides 
 Amazon EC2 Instances as nodes for the RunDeck server.
@@ -11,7 +11,7 @@ Amazon EC2 Instances as nodes for the RunDeck server.
 Installation
 ------------
 
-Put the `rundeck-ec2-nodes-plugin-1.0.jar` into your `$RDECK_BASE/libext` dir.
+Put the `rundeck-ec2-nodes-plugin-1.x.jar` into your `$RDECK_BASE/libext` dir.
 
 Usage
 -----
@@ -126,6 +126,10 @@ format:
 Note, a ".selector" value can have multiple selectors defined, separated by commas,
 and they will be evaluated in order with the first value available being used.  E.g. "nodename.selector=tags/Name,instanceId", which will look for a tag named "Name", otherwise use the instanceId.
 
+You can also use the `<field selector>=<value>` feature to set a tag only if the field selector has a certain value.
+
+### Tags selector
+
 When defining field selector for the `tags` node property, the string value selected (if any) will
 be treated as a comma-separated list of strings to use as node tags.  You could, for example, set a custom EC2 Tag on
 an instance to contain this list of tags, in this example from the simplemapping.properties file:
@@ -135,7 +139,10 @@ an instance to contain this list of tags, in this example from the simplemapping
 So creating the "Rundeck-Tags" Tag on the EC2 Instance with a value of "alpha, beta" will result in the node having
 those two node tags.
 
-You can also use the <field selector>=<value> feature to set a tag only if the field selector has a certain value.
+The tags.selector also supports a "merge" ability, so you can merge multiple Instance Tags into the RunDeck tags by separating multiple selectors with a "|" character:
+
+    tags.selector=tags/Environment|tags/Role
+
 
 Mapping EC2 Instances to Rundeck Nodes
 =================
