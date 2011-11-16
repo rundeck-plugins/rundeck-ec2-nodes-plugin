@@ -202,7 +202,7 @@ class InstanceToNodeMapper {
         }
         if (null != mapping.getProperty("tags.selector")) {
             final String selector = mapping.getProperty("tags.selector");
-            final String value = applySelector(inst, selector, mapping.getProperty("tags.default"));
+            final String value = applySelector(inst, selector, mapping.getProperty("tags.default"), true);
             if (null != value) {
                 final String[] values = value.split(",");
                 final HashSet<String> tagset = new HashSet<String>();
@@ -309,11 +309,42 @@ class InstanceToNodeMapper {
      */
     public static String applySelector(final Instance inst, final String selector, final String defaultValue) throws
         GeneratorException {
+        return applySelector(inst, selector, defaultValue, false);
+    }
+
+    /**
+     * Return the result of the selector applied to the instance, otherwise return the defaultValue. The selector can be
+     * a comma-separated list of selectors.
+     * @param inst the instance
+     * @param selector the selector string
+     * @param defaultValue a default value to return if there is no result from the selector
+     * @param tagMerge if true, allow | separator to merge multiple values
+     */
+    public static String applySelector(final Instance inst, final String selector, final String defaultValue,
+                                       final boolean tagMerge) throws
+        GeneratorException {
+
         if (null != selector) {
             for (final String selPart : selector.split(",")) {
-                final String val = applySingleSelector(inst, selPart);
-                if (null != val) {
-                    return val;
+                if (tagMerge) {
+                    final StringBuilder sb = new StringBuilder();
+                    for (final String subPart : selPart.split("\\|")) {
+                        final String val = applySingleSelector(inst, subPart);
+                        if (null != val) {
+                            if (sb.length() > 0) {
+                                sb.append(",");
+                            }
+                            sb.append(val);
+                        }
+                    }
+                    if (sb.length() > 0) {
+                        return sb.toString();
+                    }
+                } else {
+                    final String val = applySingleSelector(inst, selPart);
+                    if (null != val) {
+                        return val;
+                    }
                 }
             }
         }
