@@ -201,3 +201,29 @@ EC2 fields:
 * `tags/*`
 
 EC2 Instances can also have "Tags" which are key/value pairs attached to the Instance.  A common Tag is "Name" which could be a unique identifier for the Instance, making it a useful mapping to the Node's name field.  Note that EC2 Tags differ from Rundeck Node tags: Rundeck tags are simple string labels and are not key/value pairs.
+
+Authenticating to EC2 Nodes with Rundeck
+-----------
+
+Once you get your EC2 Instances listed in Rundeck as Nodes, you may be wondering "Now how do I use this?"
+
+Rundeck uses SSH by default with private key authentication, so in order to connect to your EC2 instances out
+of the box you will need to configure Rundeck to use the right private SSH key to connect to your nodes,
+which can be done in either of a few ways:
+
+1. Copy your private key to the default location used by Rundeck which is `~/.ssh/id_rsa`
+2. Copy your private key elsewhere, and override it on a project level. Change project.properties and set the `project.ssh-keypath` to point to the file.
+3. Copy your private key elsewhere, and set the location as an attribute on your nodes (shown below)
+
+To set the ssh keypath attribute on the EC2 Nodes produced by the plugin, you can modify your mapping configuration.
+
+E.g. in the "Mapping Params" field, set:
+
+`Mapping Params: ssh-keypath.default=/path/to/key`
+
+This will set the "ssh-keypath" attribute on your EC2 Nodes, allowing correct private key ssh authentication.
+
+The default mapping also configures a default `username` attribute to be `ec2-user`, but if you want to change the default set:
+
+`Mapping Params: ssh-keypath.default=/path/to/key;username.default=my-username`
+
