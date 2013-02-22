@@ -87,7 +87,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             + "in the form \"attribute.name.selector=selector\" or \"attribute.name.default=value\", separated by \";\"",
             false, null));
         descriptionProperties.add(PropertyUtil.string(MAPPING_FILE, "Mapping File", "Property mapping File", false,
-            null, new Property.Validator() {
+            null, new PropertyValidator() {
             public boolean isValid(final String s) throws ValidationException {
                 if (!new File(s).isFile()) {
                     throw new ValidationException("File does not exist: " + s);

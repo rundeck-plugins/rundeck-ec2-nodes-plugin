@@ -3,7 +3,7 @@ apply plugin: 'idea'
 sourceCompatibility = 1.5
 version = '1.3-SNAPSHOT'
 defaultTasks 'clean', 'build'
-rundeckPluginVersion = '1.0'
+ext.rundeckPluginVersion = '1.1'
 
 configurations{
     //declare custom pluginLibs configuration to include only libs for this plugin
@@ -15,9 +15,9 @@ configurations{
     }
 }
 repositories {
+    mavenLocal()
     mavenCentral()
-    flatDir name: 'localRepository', dirs: "$projectDir/lib"
-    
+
     add(new org.apache.ivy.plugins.resolver.FileSystemResolver()) {
         name = 'thirdparty'
         addArtifactPattern "$projectDir/third-party/[module]-[revision]/[module]-[revision](-[classifier]).[ext]"
@@ -35,7 +35,7 @@ dependencies {
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
     pluginLibs group: 'aws-java-sdk', name: 'aws-java-sdk', version: '1.0.12'
     
-    compile group: 'rundeck-core', name: 'rundeck-core', version: '1.4.0'
+    compile group: 'org.rundeck', name: 'rundeck-core', version: '1.5'
 }
 
 // task to copy plugin libs to output/lib dir
@@ -61,5 +61,4 @@ jar.dependsOn(copyToLib)
 
 task wrapper(type: Wrapper) {
     gradleVersion = '1.2'
-    jarPath = 'wrapper'
 }
