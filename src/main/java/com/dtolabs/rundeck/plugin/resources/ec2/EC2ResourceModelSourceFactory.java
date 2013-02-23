@@ -28,6 +28,8 @@ import com.dtolabs.rundeck.core.plugins.Plugin;
 import com.dtolabs.rundeck.core.plugins.configuration.*;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceFactory;
+import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
+import com.dtolabs.rundeck.plugins.util.PropertyBuilder;
 
 import java.io.File;
 import java.util.*;
@@ -46,7 +48,7 @@ import java.util.*;
  *
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
-@Plugin (name = "aws-ec2", service = "ResourceModelSource")
+@Plugin(name = "aws-ec2", service = "ResourceModelSource")
 public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory, Describable {
     public static final String PROVIDER_NAME = "aws-ec2";
     private Framework framework;
@@ -71,59 +73,41 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
         return ec2ResourceModelSource;
     }
 
-    private static List<Property> descriptionProperties = new ArrayList<Property>();
+    static Description DESC = DescriptionBuilder.builder()
+            .name(PROVIDER_NAME)
+            .title("AWS EC2 Resources")
+            .description("Produces nodes from AWS EC2")
 
+            .property(PropertyUtil.string(ACCESS_KEY, "Access Key", "AWS Access Key", true, null))
+            .property(PropertyUtil.string(SECRET_KEY, "Secret Key", "AWS Secret Key", true, null))
+            .property(PropertyUtil.integer(REFRESH_INTERVAL, "Refresh Interval",
+                    "Minimum time in seconds between API requests to AWS (default is 30)", false, "30"))
+            .property(PropertyUtil.string(FILTER_PARAMS, "Filter Params", "AWS EC2 filters", false, null))
+            .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default", false, null))
+            .property(PropertyUtil.string(MAPPING_PARAMS, "Mapping Params",
+                    "Property mapping definitions. Specify multiple mappings in the form " +
+                            "\"attributeName.selector=selector\" or \"attributeName.default=value\", " +
+                            "separated by \";\"",
+                    false, null))
+            .property(PropertyUtil.string(MAPPING_FILE, "Mapping File", "Property mapping File", false, null,
+                    new PropertyValidator() {
+                        public boolean isValid(final String s) throws ValidationException {
+                            if (!new File(s).isFile()) {
+                                throw new ValidationException("File does not exist: " + s);
+                            }
+                            return true;
+                        }
+                    }))
+            .property(PropertyUtil.bool(USE_DEFAULT_MAPPING, "Use Default Mapping",
+                    "Start with default mapping definition. (Defaults will automatically be used if no others are " +
+                            "defined.)",
+                    false, "true"))
+            .property(PropertyUtil.bool(RUNNING_ONLY, "Only Running Instances",
+                    "Include Running state instances only. If false, all instances will be returned that match your " +
+                            "filters.",
+                    false, "true"))
 
-    static {
-        descriptionProperties.add(PropertyUtil.string(ACCESS_KEY, "Access Key", "AWS Access Key", true, null));
-        descriptionProperties.add(PropertyUtil.string(SECRET_KEY, "Secret Key", "AWS Secret Key", true, null));
-        descriptionProperties.add(PropertyUtil.integer(REFRESH_INTERVAL, "Refresh Interval",
-            "Minimum time in seconds between API requests to AWS (default is 30)", false, "30"));
-        descriptionProperties.add(PropertyUtil.string(FILTER_PARAMS, "Filter Params", "AWS EC2 filters", false, null));
-        descriptionProperties.add(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default",
-            false, null));
-        descriptionProperties.add(PropertyUtil.string(MAPPING_PARAMS, "Mapping Params",
-            "Property mapping definitions. Specify multiple mappings "
-            + "in the form \"attribute.name.selector=selector\" or \"attribute.name.default=value\", separated by \";\"",
-            false, null));
-        descriptionProperties.add(PropertyUtil.string(MAPPING_FILE, "Mapping File", "Property mapping File", false,
-            null, new PropertyValidator() {
-            public boolean isValid(final String s) throws ValidationException {
-                if (!new File(s).isFile()) {
-                    throw new ValidationException("File does not exist: " + s);
-                }
-                return true;
-            }
-        }));
-        descriptionProperties.add(PropertyUtil.bool(USE_DEFAULT_MAPPING, "Use Default Mapping",
-            "Start with default mapping definition. (Defaults will automatically be used if no others are defined.)",
-            false, "true"));
-        descriptionProperties.add(PropertyUtil.bool(RUNNING_ONLY, "Only Running Instances",
-            "Include Running state instances only. If false, all instances will be returned that match your filters.",
-            false, "true"));
-    }
-
-    static Description DESC = new Description() {
-        public String getName() {
-            return PROVIDER_NAME;
-        }
-
-        public String getTitle() {
-            return "AWS EC2 Resources";
-        }
-
-        public String getDescription() {
-            return "Produces nodes from AWS EC2";
-        }
-
-        public List<Property> getProperties() {
-            return descriptionProperties;
-        }
-
-        public Map<String, String> getPropertiesMapping() {
-            return null;
-        }
-    };
+            .build();
 
     public Description getDescription() {
         return DESC;
