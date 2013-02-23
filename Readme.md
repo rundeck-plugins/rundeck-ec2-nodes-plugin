@@ -1,17 +1,21 @@
 Rundeck EC2 Nodes Plugin
 ========================
 
-Version: 1.2
+Version: 1.3
 
-This is a Resource Model Source plugin for [RunDeck][] 1.4+ that provides 
+This is a Resource Model Source plugin for [RunDeck][] 1.5+ that provides
 Amazon EC2 Instances as nodes for the RunDeck server.
 
 [RunDeck]: http://rundeck.org
 
+NOTE: For Rundeck 1.4, you will need to use plugin [version 1.2][].
+
+[version 1.2]: https://github.com/gschueler/rundeck-ec2-nodes-plugin/tree/v1.2
+
 Installation
 ------------
 
-Put the `rundeck-ec2-nodes-plugin-1.x.jar` into your `$RDECK_BASE/libext` dir.
+Put the `rundeck-ec2-nodes-plugin-1.3.jar` into your `$RDECK_BASE/libext` dir.
 
 Usage
 -----
@@ -20,7 +24,7 @@ You can configure the Resource Model Sources for a project either via the
 RunDeck GUI, under the "Admin" page, or you can modify the `project.properties`
 file to configure the sources.
 
-See: [Resource Model Source Configuration](http://rundeck.org/1.4/RunDeck-Guide.html#resource-model-source-configuration)
+See: [Resource Model Source Configuration](http://rundeck.org/1.5/manual/plugins.html#resource-model-source-configuration)
 
 The provider name is: `aws-ec2`
 

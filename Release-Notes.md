@@ -1,6 +1,16 @@
 Release Notes
 =========
 
+1.3
+---
+
+Date: 2/22/2013
+
+Changes:
+
+* Update to work with Rundeck 1.5
+* Fix incorrect description of Mapping Params config property
+
 1.2
 ---
 
