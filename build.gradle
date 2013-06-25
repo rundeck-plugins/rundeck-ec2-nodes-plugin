@@ -15,7 +15,6 @@ configurations{
     }
 }
 repositories {
-    mavenLocal()
     mavenCentral()
 
     add(new org.apache.ivy.plugins.resolver.FileSystemResolver()) {
