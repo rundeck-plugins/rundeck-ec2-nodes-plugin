@@ -34,7 +34,7 @@ dependencies {
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
     pluginLibs group: 'aws-java-sdk', name: 'aws-java-sdk', version: '1.0.12'
     
-    compile group: 'org.rundeck', name: 'rundeck-core', version: '1.5'
+    compile group: 'org.rundeck', name: 'rundeck-core', version: '1.6.0'
 }
 
 // task to copy plugin libs to output/lib dir
