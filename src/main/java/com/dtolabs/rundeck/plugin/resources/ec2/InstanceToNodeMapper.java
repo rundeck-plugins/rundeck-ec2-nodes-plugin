@@ -187,6 +187,7 @@ class InstanceToNodeMapper {
     /**
      * Convert an AWS EC2 Instance to a RunDeck INodeEntry based on the mapping input
      */
+    @SuppressWarnings("unchecked")
     static INodeEntry instanceToNode(final Instance inst, final Properties mapping) throws GeneratorException {
         final NodeEntryImpl node = new NodeEntryImpl();
 
