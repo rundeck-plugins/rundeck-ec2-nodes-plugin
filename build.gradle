@@ -11,7 +11,6 @@ apply plugin: 'release'
 apply plugin: 'java'
 apply plugin: 'idea'
 sourceCompatibility = 1.5
-version = '1.4-SNAPSHOT'
 defaultTasks 'clean', 'build'
 ext.rundeckPluginVersion = '1.1'
 
