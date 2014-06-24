@@ -24,6 +24,7 @@
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.ClientConfiguration;
 import com.amazonaws.services.ec2.AmazonEC2AsyncClient;
 import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
@@ -50,6 +51,7 @@ import java.util.regex.Pattern;
 class InstanceToNodeMapper {
     static final Logger logger = Logger.getLogger(InstanceToNodeMapper.class);
     final AWSCredentials credentials;
+    final ClientConfiguration clientConfiguration;
     private ArrayList<String> filterParams;
     private String endpoint;
     private boolean runningStateOnly = true;
@@ -58,9 +60,10 @@ class InstanceToNodeMapper {
     /**
      * Create with the credentials and mapping definition
      */
-    InstanceToNodeMapper(final AWSCredentials credentials, final Properties mapping) {
+    InstanceToNodeMapper(final AWSCredentials credentials, final Properties mapping, final ClientConfiguration clientConfiguration) {
         this.credentials = credentials;
         this.mapping = mapping;
+        this.clientConfiguration = clientConfiguration;
     }
 
     /**
@@ -70,7 +73,8 @@ class InstanceToNodeMapper {
      */
     public INodeSet performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
-        final AmazonEC2Client ec2 = new AmazonEC2Client(credentials);
+        
+        final AmazonEC2Client ec2 = new AmazonEC2Client(credentials,clientConfiguration);
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }
@@ -88,7 +92,8 @@ class InstanceToNodeMapper {
      * @param nodeSet
      */
     public Future<INodeSet> performQueryAsync() {
-        final AmazonEC2AsyncClient ec2 = new AmazonEC2AsyncClient(credentials);
+        
+        final AmazonEC2AsyncClient ec2 = new AmazonEC2AsyncClient(credentials,clientConfiguration,null);
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }
