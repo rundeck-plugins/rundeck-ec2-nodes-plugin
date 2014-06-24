@@ -1,6 +1,10 @@
 Rundeck EC2 Nodes Plugin
 ========================
 
+Version: 1.6
+
+Added Support for HTTP Proxy.
+
 Version: 1.3
 
 This is a Resource Model Source plugin for [RunDeck][] 1.5+ that provides
