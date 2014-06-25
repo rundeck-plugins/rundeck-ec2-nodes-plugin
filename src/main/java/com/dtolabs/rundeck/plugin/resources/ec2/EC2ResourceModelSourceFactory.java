@@ -87,7 +87,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             .property(PropertyUtil.string(FILTER_PARAMS, "Filter Params", "AWS EC2 filters", false, null))
             .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default", false, null))
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
-            .property(PropertyUtil.string(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
+            .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
             .property(PropertyUtil.string(MAPPING_PARAMS, "Mapping Params",
                     "Property mapping definitions. Specify multiple mappings in the form " +
                             "\"attributeName.selector=selector\" or \"attributeName.default=value\", " +
