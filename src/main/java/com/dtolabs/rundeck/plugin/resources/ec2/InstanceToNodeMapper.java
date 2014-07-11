@@ -36,6 +36,8 @@ import org.apache.commons.beanutils.BeanUtils;
 import org.apache.log4j.Logger;
 
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -51,7 +53,8 @@ import java.util.regex.Pattern;
 class InstanceToNodeMapper {
     static final Logger logger = Logger.getLogger(InstanceToNodeMapper.class);
     final AWSCredentials credentials;
-    final ClientConfiguration clientConfiguration;
+    private ClientConfiguration clientConfiguration;
+    private ExecutorService executorService = Executors.newSingleThreadExecutor();
     private ArrayList<String> filterParams;
     private String endpoint;
     private boolean runningStateOnly = true;
@@ -93,7 +96,7 @@ class InstanceToNodeMapper {
      */
     public Future<INodeSet> performQueryAsync() {
         
-        final AmazonEC2AsyncClient ec2 = new AmazonEC2AsyncClient(credentials,clientConfiguration,null);
+        final AmazonEC2AsyncClient ec2 = new AmazonEC2AsyncClient(credentials,clientConfiguration,executorService);
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }
