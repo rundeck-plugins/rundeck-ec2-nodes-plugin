@@ -15,6 +15,8 @@ NOTE: For Rundeck 1.4, you will need to use plugin [version 1.2][].
 Installation
 ------------
 
+Download from the [releases page](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/releases).
+
 Put the `rundeck-ec2-nodes-plugin-1.3.jar` into your `$RDECK_BASE/libext` dir.
 
 Usage
