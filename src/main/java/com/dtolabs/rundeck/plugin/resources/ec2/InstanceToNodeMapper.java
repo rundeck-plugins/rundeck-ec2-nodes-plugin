@@ -25,6 +25,7 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 import com.amazonaws.services.ec2.AmazonEC2AsyncClient;
 import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
@@ -72,12 +73,16 @@ class InstanceToNodeMapper {
     /**
      * Perform the query and return the set of instances
      *
-     * @param nodeSet
      */
     public INodeSet performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
         
-        final AmazonEC2Client ec2 = new AmazonEC2Client(credentials,clientConfiguration);
+        final AmazonEC2Client ec2 ;
+        if(null!=credentials) {
+            ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+        } else{
+            ec2 = new AmazonEC2Client(clientConfiguration);
+        }
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }
@@ -92,11 +97,15 @@ class InstanceToNodeMapper {
     /**
      * Perform the query asynchronously and return the set of instances
      *
-     * @param nodeSet
      */
     public Future<INodeSet> performQueryAsync() {
         
-        final AmazonEC2AsyncClient ec2 = new AmazonEC2AsyncClient(credentials,clientConfiguration,executorService);
+        final AmazonEC2AsyncClient ec2 ;
+        if(null!=credentials){
+            ec2= new AmazonEC2AsyncClient(credentials, clientConfiguration, executorService);
+        } else{
+            ec2 = new AmazonEC2AsyncClient(new DefaultAWSCredentialsProviderChain(), clientConfiguration, executorService);
+        }
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }

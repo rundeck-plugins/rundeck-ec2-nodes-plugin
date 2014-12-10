@@ -68,8 +68,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
 
-    final AWSCredentials credentials;
-    ClientConfiguration clientConfiguration = null;
+    AWSCredentials credentials;
+    ClientConfiguration clientConfiguration = new ClientConfiguration();;
     
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
@@ -167,10 +167,11 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             runningOnly = Boolean.parseBoolean(configuration.getProperty(
                 EC2ResourceModelSourceFactory.RUNNING_ONLY));
         }
-        credentials = new BasicAWSCredentials(accessKey, secretKey);
+        if (null != accessKey && null != secretKey) {
+            credentials = new BasicAWSCredentials(accessKey, secretKey);
+        }
         
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
-            clientConfiguration = new ClientConfiguration();
             clientConfiguration.setProxyHost(httpProxyHost);
             clientConfiguration.setProxyPort(httpProxyPort);
             clientConfiguration.setProxyUsername(httpProxyUser);
@@ -270,11 +271,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     }
 
     public void validate() throws ConfigurationException {
-        if (null == accessKey) {
-            throw new ConfigurationException("accessKey is required");
-        }
-        if (null == secretKey) {
-            throw new ConfigurationException("secretKey is required");
+        if (null != accessKey && null == secretKey) {
+            throw new ConfigurationException("secretKey is required for use with accessKey");
         }
 
     }
