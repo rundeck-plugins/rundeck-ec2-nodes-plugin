@@ -24,6 +24,7 @@
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
@@ -55,6 +56,10 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     long lastRefresh = 0;
     String filterParams;
     String endpoint;
+    String httpProxyHost;
+    int httpProxyPort = 80;
+    String httpProxyUser;
+    String httpProxyPass;
     String mappingParams;
     File mappingFile;
     boolean useDefaultMapping = true;
@@ -64,6 +69,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     final Properties mapping = new Properties();
 
     final AWSCredentials credentials;
+    ClientConfiguration clientConfiguration = null;
+    
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
     InstanceToNodeMapper mapper;
@@ -121,6 +128,21 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
+        this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
+        int proxyPort = 80;
+        
+        final String proxyPortStr = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PORT);
+        if (null != proxyPortStr && !"".equals(proxyPortStr)) {
+            try {
+                proxyPort = Integer.parseInt(proxyPortStr);
+            } catch (NumberFormatException e) {
+                logger.warn(EC2ResourceModelSourceFactory.HTTP_PROXY_PORT + " value is not valid: " + proxyPortStr);
+            }
+        }
+        this.httpProxyPort = proxyPort;
+        this.httpProxyUser = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_USER);
+        this.httpProxyPass = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PASS);
+
         this.filterParams = configuration.getProperty(EC2ResourceModelSourceFactory.FILTER_PARAMS);
         this.mappingParams = configuration.getProperty(EC2ResourceModelSourceFactory.MAPPING_PARAMS);
         final String mappingFilePath = configuration.getProperty(EC2ResourceModelSourceFactory.MAPPING_FILE);
@@ -146,6 +168,15 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                 EC2ResourceModelSourceFactory.RUNNING_ONLY));
         }
         credentials = new BasicAWSCredentials(accessKey, secretKey);
+        
+        if (null != httpProxyHost && !"".equals(httpProxyHost)) {
+            clientConfiguration = new ClientConfiguration();
+            clientConfiguration.setProxyHost(httpProxyHost);
+            clientConfiguration.setProxyPort(httpProxyPort);
+            clientConfiguration.setProxyUsername(httpProxyUser);
+            clientConfiguration.setProxyPassword(httpProxyPass);
+        }
+        
         initialize();
     }
 
@@ -155,7 +186,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             Collections.addAll(params, filterParams.split(";"));
         }
         loadMapping();
-        mapper = new InstanceToNodeMapper(credentials, mapping);
+        mapper = new InstanceToNodeMapper(credentials, mapping, clientConfiguration);
         mapper.setFilterParams(params);
         mapper.setEndpoint(endpoint);
         mapper.setRunningStateOnly(runningOnly);
