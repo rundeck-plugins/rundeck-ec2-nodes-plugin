@@ -293,6 +293,10 @@ class InstanceToNodeMapper {
             final Matcher m = attribPat.matcher(key);
             if (m.matches()) {
                 final String attrName = m.group(1);
+                if(attrName.equals("tags")){
+                    //already handled
+                    continue;
+                }
                 if (null == node.getAttributes()) {
                     node.setAttributes(new HashMap<String, String>());
                 }
@@ -346,7 +350,7 @@ class InstanceToNodeMapper {
             for (final String selPart : selector.split(",")) {
                 if (tagMerge) {
                     final StringBuilder sb = new StringBuilder();
-                    for (final String subPart : selPart.split("\\|")) {
+                    for (final String subPart : selPart.split(Pattern.quote("|"))) {
                         final String val = applySingleSelector(inst, subPart);
                         if (null != val) {
                             if (sb.length() > 0) {
