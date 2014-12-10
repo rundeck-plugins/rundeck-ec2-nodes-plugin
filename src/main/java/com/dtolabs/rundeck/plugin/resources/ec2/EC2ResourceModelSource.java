@@ -58,6 +58,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     String endpoint;
     String httpProxyHost;
     int httpProxyPort = 80;
+    String httpProxyUser;
+    String httpProxyPass;
     String mappingParams;
     File mappingFile;
     boolean useDefaultMapping = true;
@@ -138,7 +140,9 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             }
         }
         this.httpProxyPort = proxyPort;
-        
+        this.httpProxyUser = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_USER);
+        this.httpProxyPass = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PASS);
+
         this.filterParams = configuration.getProperty(EC2ResourceModelSourceFactory.FILTER_PARAMS);
         this.mappingParams = configuration.getProperty(EC2ResourceModelSourceFactory.MAPPING_PARAMS);
         final String mappingFilePath = configuration.getProperty(EC2ResourceModelSourceFactory.MAPPING_FILE);
@@ -169,6 +173,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             clientConfiguration = new ClientConfiguration();
             clientConfiguration.setProxyHost(httpProxyHost);
             clientConfiguration.setProxyPort(httpProxyPort);
+            clientConfiguration.setProxyUsername(httpProxyUser);
+            clientConfiguration.setProxyPassword(httpProxyPass);
         }
         
         initialize();
