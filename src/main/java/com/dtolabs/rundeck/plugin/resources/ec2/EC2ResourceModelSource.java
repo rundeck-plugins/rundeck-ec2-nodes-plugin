@@ -86,7 +86,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                                + "osName.default=Linux\n"
                                + "username.selector=tags/Rundeck-User\n"
                                + "username.default=ec2-user\n"
-                               + "editUrl.default=https://console.aws.amazon.com/ec2/home#s=Instances&selectInstance=${node.instanceId}\n"
+                               + "editUrl.default=https://console.aws.amazon.com/ec2/home#Instances:search=${node.instanceId}\n"
                                + "privateIpAddress.selector=privateIpAddress\n"
                                + "privateDnsName.selector=privateDnsName\n"
                                + "tags.selector=tags/Rundeck-Tags\n"
