@@ -36,13 +36,29 @@ Here are the configuration properties:
 * `secretKey`: API SecretKey value
 * `endpoint` - the AWS endpoint to use, or blank for the default 
 * `refreshInterval`: Time in seconds used as minimum interval between calls to the AWS API. (default 30)
-* `filter` A set of ";" separated query filters ("filter=value") for the AWS EC2 API, see [DescribeInstances][1]
+* `filter` A set of ";" separated query filters ("$Name=$Value") for the AWS EC2 API, see below.
 * `runningOnly`: if "true", automatically filter the * instances by "instance-state-name=running"
 * `useDefaultMapping`: if "true", base all mapping definitions off the default mapping provided.
 * `mappingParams`: A set of ";" separated mapping entries
 * `mappingFile`: Path to a java properties-formatted mapping definition file.
 
+## Filter definition
+
+The syntax for defining filters uses `$Name=$Value[;$Name=$value[;...]]` for any of the allowed filter names (see [DescribeInstances][1] for the available filter Names).  *Note*: you do not need to specify `Filter.1.Name=$Name`, etc. as described in the EC2 API documentation, this will handled for you.  Simply list the Name = Value pairs, separated by `;`.
+
  [1]: http://docs.amazonwebservices.com/AWSEC2/latest/APIReference/ApiReference-query-DescribeInstances.html
+
+Example: to filter based on a Tag named "MyTag" with a value of "Some Tag Value":
+
+    tag:MyTag=Some Tag Value
+    
+Example: to filter *any* instance with a Tag named `MyTag`:
+
+    tag-key=MyTag
+
+Example combining matching a tag value and the instance type:
+
+    tag:MyTag=Some Tag Value;instance-type=m1.small
 
 Mapping Definition
 ----------
