@@ -12,6 +12,7 @@ Changes:
 * Make AWS access key and secret optional, and use IAM profile instead [#20](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/20)
 * Edit link for nodes updated for new AWS console URL scheme
 * Use Password field input for AWS SecretKey and Proxy Password
+* Fix use of "|" in `tags.selector` mapping [#18](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/18)
 
 1.4
 ---
