@@ -13,6 +13,7 @@ Changes:
 * Edit link for nodes updated for new AWS console URL scheme
 * Use Password field input for AWS SecretKey and Proxy Password
 * Fix use of "|" in `tags.selector` mapping [#18](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/18)
+* Fix: Errant whitespace in project.properties can cause AWS auth to fail [#13](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/13)
 
 1.4
 ---
