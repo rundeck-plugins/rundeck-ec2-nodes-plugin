@@ -1,5 +1,14 @@
 Release Notes
 =========
+1.4
+---
+
+Date: 1/24/2014
+
+Changes:
+
+* Fix log4j problem with Rundeck 1.6
+* works with Rundeck 1.6/2.x
 
 1.3
 ---
