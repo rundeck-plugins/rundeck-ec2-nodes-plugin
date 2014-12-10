@@ -9,6 +9,9 @@ Date: 12/10/2014
 Changes:
 
 * Fix issue of adding http proxy support [Issue #14](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/14)
+* Make AWS access key and secret optional, and use IAM profile instead [#20](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/20)
+* Edit link for nodes updated for new AWS console URL scheme
+* Use Password field input for AWS SecretKey and Proxy Password
 
 1.4
 ---
