@@ -83,8 +83,18 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             .description("Produces nodes from AWS EC2")
 
             .property(PropertyUtil.string(ACCESS_KEY, "Access Key", "AWS Access Key", false, null))
-            .property(PropertyUtil.string(SECRET_KEY, "Secret Key", "AWS Secret Key, required if Access Key is used." +
-                    " If not used, then the IAM profile will be used", false, null))
+            .property(
+                    PropertyUtil.string(
+                            SECRET_KEY,
+                            "Secret Key",
+                            "AWS Secret Key, required if Access Key is used. If not used, then the IAM profile will be used",
+                            false,
+                            null,
+                            null,
+                            null,
+                            Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                    )
+            )
             .property(PropertyUtil.integer(REFRESH_INTERVAL, "Refresh Interval",
                     "Minimum time in seconds between API requests to AWS (default is 30)", false, "30"))
             .property(PropertyUtil.string(FILTER_PARAMS, "Filter Params", "AWS EC2 filters", false, null))
@@ -92,7 +102,18 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
             .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
             .property(PropertyUtil.string(HTTP_PROXY_USER, "HTTP Proxy User", "HTTP Proxy User Name, or blank for default", false, null))
-            .property(PropertyUtil.string(HTTP_PROXY_PASS, "HTTP Proxy Password", "HTTP Proxy Password, or blank for default", false, null))
+            .property(
+                    PropertyUtil.string(
+                            HTTP_PROXY_PASS,
+                            "HTTP Proxy Password",
+                            "HTTP Proxy Password, or blank for default",
+                            false,
+                            null,
+                            null,
+                            null,
+                            Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                    )
+            )
             .property(PropertyUtil.string(MAPPING_PARAMS, "Mapping Params",
                     "Property mapping definitions. Specify multiple mappings in the form " +
                             "\"attributeName.selector=selector\" or \"attributeName.default=value\", " +
