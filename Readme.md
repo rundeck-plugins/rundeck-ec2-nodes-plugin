@@ -1,7 +1,7 @@
 Rundeck EC2 Nodes Plugin
 ========================
 
-Version: 1.4
+Version: 1.5
 
 This is a Resource Model Source plugin for [RunDeck][] 1.5+ that provides
 Amazon EC2 Instances as nodes for the RunDeck server.

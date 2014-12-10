@@ -1,5 +1,15 @@
 Release Notes
 =========
+
+1.5
+---
+
+Date: 12/10/2014
+
+Changes:
+
+* Fix issue of adding http proxy support [Issue #14](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/14)
+
 1.4
 ---
 
