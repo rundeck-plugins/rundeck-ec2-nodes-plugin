@@ -168,7 +168,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                 EC2ResourceModelSourceFactory.RUNNING_ONLY));
         }
         if (null != accessKey && null != secretKey) {
-            credentials = new BasicAWSCredentials(accessKey, secretKey);
+            credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
         }
         
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
