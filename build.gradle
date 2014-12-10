@@ -26,24 +26,24 @@ configurations{
 repositories {
     mavenCentral()
 
-    add(new org.apache.ivy.plugins.resolver.FileSystemResolver()) {
+    ivy {
+        url = "file:$projectDir/third-party"
         name = 'thirdparty'
-        addArtifactPattern "$projectDir/third-party/[module]-[revision]/[module]-[revision](-[classifier]).[ext]"
-        descriptor = 'optional'
-        checkmodified = true
+        layout  'pattern', {
+            artifact "[module]-[revision]/[module]-[revision](-[classifier]).[ext]"
+        }
     }
 }
 dependencies {
+    compile group: 'org.rundeck', name: 'rundeck-core', version: '2.2.2'
+
     pluginLibs group: 'commons-beanutils', name: 'commons-beanutils', version: '1.7.0'
-    pluginLibs group: 'commons-httpclient', name: 'commons-httpclient', version: '3.0.1'
     pluginLibs group: 'dom4j', name: 'dom4j', version: '1.6.1'
     pluginLibs group: 'apache-log4j', name: 'apache-log4j', version: '1.2.15'
-    pluginLibs group: 'jackson-core-asl', name: 'jackson-core-asl', version: '1.4.3'
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
-    pluginLibs group: 'aws-java-sdk', name: 'aws-java-sdk', version: '1.0.12'
-    
-    compile group: 'org.rundeck', name: 'rundeck-core', version: '1.6.0'
+
+    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.9.0'
 }
 
 // task to copy plugin libs to output/lib dir
