@@ -34,7 +34,7 @@ Here are the configuration properties:
 
 * `accessKey`: API AccessKey value
 * `secretKey`: API SecretKey value
-* `endpoint` - the AWS endpoint to use, or blank for the default 
+* `endpoint` - the AWS endpoint to use, or blank for the default (see [Amazon EC2 Regions and Endpoints](http://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region))
 * `refreshInterval`: Time in seconds used as minimum interval between calls to the AWS API. (default 30)
 * `filter` A set of ";" separated query filters ("$Name=$Value") for the AWS EC2 API, see below.
 * `runningOnly`: if "true", automatically filter the * instances by "instance-state-name=running"
