@@ -74,6 +74,8 @@ Here is the default mapping:
     description.default=EC2 node instance
     editUrl.default=https://console.aws.amazon.com/ec2/home#s=Instances&selectInstance=${node.instanceId}
     hostname.selector=publicDnsName
+    sshport.default=22
+    sshport.selector=tags/ssh_config_Port
     instanceId.selector=instanceId
     nodename.selector=tags/Name,instanceId
     osArch.selector=architecture
@@ -175,6 +177,7 @@ Rundeck nodes have the following metadata fields:
 
 * `nodename` - unique identifier
 * `hostname` - IP address/hostname to connect to the node
+* `sshport` - The ssh port, if resolved to another port than 22 hostname will be set to ``<hostname>:<sshport>``
 * `username` - SSH username to connect to the node
 * `description` - textual description
 * `osName` - OS name

@@ -322,6 +322,12 @@ class InstanceToNodeMapper {
         }
         node.setNodename(name);
 
+        // Set ssh port on hostname if not 22
+        String sshport = node.getAttributes().get("sshport");
+        if (sshport != null && !sshport.equals("") && !sshport.equals("22")) {
+            node.setHostname(node.getHostname() + ":" + sshport);
+        }
+
         return node;
     }
 

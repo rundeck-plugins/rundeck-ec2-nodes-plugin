@@ -78,6 +78,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     static {
         final String mapping = "nodename.selector=tags/Name,instanceId\n"
                                + "hostname.selector=publicDnsName\n"
+                               + "sshport.default=22\n"
+                               + "sshport.selector=tags/ssh_config_Port\n"
                                + "description.default=EC2 node instance\n"
                                + "osArch.selector=architecture\n"
                                + "osFamily.selector=platform\n"
