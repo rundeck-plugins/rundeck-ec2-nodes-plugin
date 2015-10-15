@@ -7,7 +7,7 @@ cache:
   - $HOME/.gradle/wrapper/
 deploy:
   provider: releases
-  api_key: "$GITHUB_AUTH_TOKEN"
+  api_key: $GITHUB_AUTH_TOKEN
   file: build/libs/rundeck-ec2-nodes-plugin-*.jar
   file_glob: true
   skip_cleanup: true
@@ -18,3 +18,5 @@ env:
     secure: Z5sNv+8SwzWTPnNDSGiQt063BKwhkurUMjuTOnu1ZLlkoVZfu7cn1fiWV9JRdb7/Asj/jA+EoVq+j8iSM2WQjrD6Nn51D7/TSiKju1ISVH4BOzAHOJGrGYOySgU2Jhc2jvO/oni3DJN261jKg5vwmQpZexteCKE3UflMmhNMbGU=
 notifications:
   email: false
+  slack:
+    secure: bNG71NV9O9NIoVzWS2LenTc8Nq5uqIjJ7h6UOW8eMMLi65nCEubhMW+ideRuX8BRjXjhemvfdu0euuHHL2rHlQQ+tyMsdg0svy5VtpQcCc8l0KxptNgh9q+2Cw8znSzy1egbAWBd+uud+WZ4gydRt8medrv+ed5fPfUQcwCY9R4=
