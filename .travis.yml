@@ -16,3 +16,5 @@ deploy:
 env:
   global:
     secure: Z5sNv+8SwzWTPnNDSGiQt063BKwhkurUMjuTOnu1ZLlkoVZfu7cn1fiWV9JRdb7/Asj/jA+EoVq+j8iSM2WQjrD6Nn51D7/TSiKju1ISVH4BOzAHOJGrGYOySgU2Jhc2jvO/oni3DJN261jKg5vwmQpZexteCKE3UflMmhNMbGU=
+notifications:
+  email: false
