@@ -32,8 +32,8 @@ The provider name is: `aws-ec2`
 
 Here are the configuration properties:
 
-* `accessKey`: API AccessKey value
-* `secretKey`: API SecretKey value
+* `accessKey`: API AccessKey value (if not using IAM profile)
+* `secretKey`: API SecretKey value (if not using IAM profile)
 * `endpoint` - the AWS endpoint to use, or blank for the default (see [Amazon EC2 Regions and Endpoints](http://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region))
 * `refreshInterval`: Time in seconds used as minimum interval between calls to the AWS API. (default 30)
 * `filter` A set of ";" separated query filters ("$Name=$Value") for the AWS EC2 API, see below.
@@ -41,6 +41,8 @@ Here are the configuration properties:
 * `useDefaultMapping`: if "true", base all mapping definitions off the default mapping provided.
 * `mappingParams`: A set of ";" separated mapping entries
 * `mappingFile`: Path to a java properties-formatted mapping definition file.
+
+If you leave `accessKey` and `secretKey` blank, the EC2 IAM profile will be used.
 
 ## Filter definition
 
