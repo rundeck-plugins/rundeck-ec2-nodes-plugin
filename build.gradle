@@ -62,6 +62,7 @@ dependencies {
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
 
     pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.9.0'
+    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.9.0'
 }
 
 // task to copy plugin libs to output/lib dir

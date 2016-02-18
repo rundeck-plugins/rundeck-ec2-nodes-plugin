@@ -26,6 +26,9 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.auth.BasicSessionCredentials;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
+import com.amazonaws.services.securitytoken.model.*;
 import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
@@ -67,6 +70,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     boolean queryAsync = true;
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
+    final String assumeRoleArn;
 
     AWSCredentials credentials;
     ClientConfiguration clientConfiguration = new ClientConfiguration();;
@@ -171,6 +175,9 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
         if (null != accessKey && null != secretKey) {
             credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
+            assumeRoleArn = null;
+        }else{
+            assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
         }
         
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
@@ -189,7 +196,23 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             Collections.addAll(params, filterParams.split(";"));
         }
         loadMapping();
-        mapper = new InstanceToNodeMapper(credentials, mapping, clientConfiguration);
+        if (this.credentials == null && assumeRoleArn != null) {
+            AWSSecurityTokenServiceClient sts_client = new AWSSecurityTokenServiceClient();
+            //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
+            AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
+            assumeRoleRequest.setRoleArn(assumeRoleArn);
+            assumeRoleRequest.setRoleSessionName("RundeckEC2ResourceModelSourceSession");
+            AssumeRoleResult assumeRoleResult = sts_client.assumeRole(assumeRoleRequest);
+            Credentials assumeCredentials = assumeRoleResult.getCredentials();
+            credentials = new BasicSessionCredentials(
+                    assumeCredentials.getAccessKeyId(),
+                    assumeCredentials.getSecretAccessKey(),
+                    assumeCredentials.getSessionToken()
+            );
+        }
+
+
+        mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration);
         mapper.setFilterParams(params);
         mapper.setEndpoint(endpoint);
         mapper.setRunningStateOnly(runningOnly);
