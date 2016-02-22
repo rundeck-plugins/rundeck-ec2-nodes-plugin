@@ -59,6 +59,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String RUNNING_ONLY = "runningOnly";
     public static final String ACCESS_KEY = "accessKey";
     public static final String SECRET_KEY = "secretKey";
+    public static final String ROLE_ARN = "assumeRoleArn";
     public static final String MAPPING_FILE = "mappingFile";
     public static final String REFRESH_INTERVAL = "refreshInterval";
     public static final String USE_DEFAULT_MAPPING = "useDefaultMapping";
@@ -93,6 +94,17 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                    )
+            )
+            .property(
+                    PropertyUtil.string(
+                            ROLE_ARN,
+                            "Assume Role ARN",
+                            "IAM Role ARN to assume, if using IAM Profile only.\n\nSee [IAM Roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html).",
+                            false,
+                            null,
+                            null,
+                            null
                     )
             )
             .property(PropertyUtil.integer(REFRESH_INTERVAL, "Refresh Interval",
