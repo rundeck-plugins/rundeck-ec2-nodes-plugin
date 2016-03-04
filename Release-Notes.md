@@ -1,6 +1,26 @@
 Release Notes
 =========
 
+1.5.2
+---
+
+Date: 2016-03-04
+
+Changes:
+
+* fix metadata for plugin file version [#38](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/38)
+* add support for assumeRole for IAM profile [#40](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/pull/40)
+
+
+1.5.1
+---
+
+Date: 10/15/2015
+
+Changes:
+
+* add support for setting ssh port [#33](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/pull/33)
+
 1.5
 ---
 
