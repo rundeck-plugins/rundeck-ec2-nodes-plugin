@@ -379,7 +379,7 @@ class InstanceToNodeMapper {
         return defaultValue;
     }
 
-    private static String applySingleSelector(final Instance inst, final String selector) throws
+    static String applySingleSelector(final Instance inst, final String selector) throws
         GeneratorException {
         if (null != selector && !"".equals(selector) && selector.startsWith("tags/")) {
             final String tag = selector.substring("tags/".length());
