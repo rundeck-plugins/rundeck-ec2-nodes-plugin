@@ -357,7 +357,7 @@ class InstanceToNodeMapper {
                 if (tagMerge) {
                     final StringBuilder sb = new StringBuilder();
                     for (final String subPart : selPart.split(Pattern.quote("|"))) {
-                        final String val = applySingleSelector(inst, subPart);
+                        final String val = applyMultiSelector(inst, subPart.split(Pattern.quote("+")));
                         if (null != val) {
                             if (sb.length() > 0) {
                                 sb.append(",");
@@ -369,7 +369,7 @@ class InstanceToNodeMapper {
                         return sb.toString();
                     }
                 } else {
-                    final String val = applySingleSelector(inst, selPart);
+                    final String val = applyMultiSelector(inst, selPart.split(Pattern.quote("+")));
                     if (null != val) {
                         return val;
                     }
@@ -379,7 +379,42 @@ class InstanceToNodeMapper {
         return defaultValue;
     }
 
-    private static String applySingleSelector(final Instance inst, final String selector) throws
+    private static final Pattern quoted = Pattern.compile("^(['\"])(.+)\\1$");
+
+    /**
+     * Return conjoined multiple selector and literal values only if some selector value matches, otherwise null.
+     * Apply multiple selectors and separators to determine the value, the selector values are conjoined
+     * in order if they resolve to a non-blank value. If a selector is a quoted string, the contents are
+     * conjoined literally
+     *
+     * @param inst
+     * @param selectors
+     *
+     * @return conjoined selector values with literal separators, if some selector was resolved, otherwise null
+     *
+     * @throws GeneratorException
+     */
+    static String applyMultiSelector(final Instance inst, final String... selectors) throws
+            GeneratorException
+    {
+        StringBuilder sb = new StringBuilder();
+        boolean hasVal = false;
+        for (String selector : selectors) {
+            Matcher matcher = quoted.matcher(selector);
+            if (matcher.matches()) {
+                sb.append(matcher.group(2));
+            } else {
+                String val = applySingleSelector(inst, selector);
+                if (null != val && !"".equals(val)) {
+                    hasVal = true;
+                    sb.append(val);
+                }
+            }
+        }
+
+        return hasVal ? sb.toString() : null;
+    }
+    static String applySingleSelector(final Instance inst, final String selector) throws
         GeneratorException {
         if (null != selector && !"".equals(selector) && selector.startsWith("tags/")) {
             final String tag = selector.substring("tags/".length());

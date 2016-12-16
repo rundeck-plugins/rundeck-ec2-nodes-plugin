@@ -10,6 +10,7 @@ plugins {
 }
 
 apply plugin: 'java'
+apply plugin: 'groovy'
 apply plugin: 'idea'
 apply plugin: 'pl.allegro.tech.build.axion-release'
 sourceCompatibility = 1.6
@@ -63,6 +64,9 @@ dependencies {
 
     pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.9.0'
     pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.9.0'
+
+    testCompile "org.codehaus.groovy:groovy-all:2.3.7"
+    testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
 }
 
 // task to copy plugin libs to output/lib dir
