@@ -63,12 +63,13 @@ class InstanceToNodeMapperSpec extends Specification {
 
         where:
         selector       | expect
-        'tags/name'    | 'bob'
+        'tags/Name'    | 'bob'
         'tags/env'     | 'PROD'
         'tags/missing' | null
     }
 
-    def "apply selector"() {
+    @Unroll
+    def "apply selector #selector"() {
         given:
         def i = mkInstance()
         when:
@@ -82,9 +83,38 @@ class InstanceToNodeMapperSpec extends Specification {
         'publicDnsName,instanceId'     | null        | 'aninstanceId'
         'privateIpAddress,instanceId'  | null        | '127.0.9.9'
         'instanceId,privateIpAddress'  | null        | 'aninstanceId'
-        'publicDnsName,instanceId'     | null        | 'aninstanceId'
         'publicDnsName,privateDnsName' | null        | null
         'publicDnsName,privateDnsName' | 'a default' | 'a default'
+    }
+
+    def "apply selector multipart"() {
+        given:
+        def i = mkInstance()
+        when:
+        def result = InstanceToNodeMapper.applySelector(i, selector, defVal)
+        then:
+        result == expect
+
+        where:
+        selector                            | defVal      | expect
+        'instanceId+publicDnsName'          | null        | 'aninstanceId'
+        'instanceId+\'_\'+publicDnsName'    | null        | 'aninstanceId_'
+        'instanceId+"_"+publicDnsName'      | null        | 'aninstanceId_'
+        'publicDnsName+instanceId'          | null        | 'aninstanceId'
+        'publicDnsName+\'_\'+instanceId'    | null        | '_aninstanceId'
+        'publicDnsName+"/"+instanceId'      | null        | '/aninstanceId'
+        'privateIpAddress+instanceId'       | null        | '127.0.9.9aninstanceId'
+        'privateIpAddress+\'_\'+instanceId' | null        | '127.0.9.9_aninstanceId'
+        'privateIpAddress+"::"+instanceId'  | null        | '127.0.9.9::aninstanceId'
+        'instanceId+privateIpAddress'       | null        | 'aninstanceId127.0.9.9'
+        'instanceId+"-"+privateIpAddress'   | null        | 'aninstanceId-127.0.9.9'
+        'publicDnsName+instanceId'          | null        | 'aninstanceId'
+        'publicDnsName+"-"+instanceId'      | null        | '-aninstanceId'
+        'publicDnsName+privateDnsName'      | null        | null
+        'publicDnsName+"_"+privateDnsName'  | null        | null
+        'publicDnsName+privateDnsName'      | 'a default' | 'a default'
+        'publicDnsName+"_"+privateDnsName'  | 'a default' | 'a default'
+        'tags/Name+"-"+instanceId'          | null        | 'bob-aninstanceId'
     }
 
     def "apply selector merged tags"() {
@@ -97,7 +127,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
         where:
         selector                       | defVal      | expect
-        'tags/name|tags/env'           | null        | 'bob,PROD'
+        'tags/Name|tags/env'           | null        | 'bob,PROD'
         'publicDnsName|instanceId'     | null        | 'aninstanceId'
         'privateIpAddress|instanceId'  | null        | '127.0.9.9,aninstanceId'
         'instanceId|privateIpAddress'  | null        | 'aninstanceId,127.0.9.9'
@@ -106,9 +136,22 @@ class InstanceToNodeMapperSpec extends Specification {
         'publicDnsName|privateDnsName' | 'a default' | 'a default'
     }
 
+    def "apply selector merged tags multi"() {
+        given:
+        def i = mkInstance()
+        when:
+        def result = InstanceToNodeMapper.applySelector(i, selector, defVal, true)
+        then:
+        result == expect
+
+        where:
+        selector                            | defVal | expect
+        'instanceId|tags/Name+"_"+tags/env' | null   | 'aninstanceId,bob_PROD'
+    }
+
     private static Instance mkInstance() {
         Instance i = new Instance()
-        i.withTags(new Tag('name', 'bob'), new Tag('env', 'PROD'))
+        i.withTags(new Tag('Name', 'bob'), new Tag('env', 'PROD'))
         i.setInstanceId("aninstanceId")
         i.setArchitecture("anarch")
 

@@ -169,6 +169,25 @@ The tags.selector also supports a "merge" ability, so you can merge multiple Ins
 
     tags.selector=tags/Environment|tags/Role
 
+### Appending values
+
+A field selector can conjoin multiple values using `+`, and can append literal text like the `_` character for example.
+
+    # conjoin two fields with no separation between the values
+    # this will result in "field1field2" 
+    <attribute>.selector=<field selector>+<field2 selector>
+    
+    # conjoin multiple fields with a literal string delimiter
+    # this will result in "field1-*-field2"
+    <attribute>.selector=<field selector>+"-*-"+<field2 selector>
+
+Use a quoted value to insert a delimiter, with either single or double quotes.
+
+Here is an example to use the "Name" instance tag, and InstanceId, to generate
+a unique node name for rundeck:
+
+    nodename.selector=tags/Name+'-'+instanceId
+
 
 Mapping EC2 Instances to Rundeck Nodes
 =================
