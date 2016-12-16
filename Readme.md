@@ -75,7 +75,7 @@ Here is the default mapping:
 
     description.default=EC2 node instance
     editUrl.default=https://console.aws.amazon.com/ec2/home#s=Instances&selectInstance=${node.instanceId}
-    hostname.selector=publicDnsName
+    hostname.selector=publicDnsName,privateIpAddress
     sshport.default=22
     sshport.selector=tags/ssh_config_Port
     instanceId.selector=instanceId
