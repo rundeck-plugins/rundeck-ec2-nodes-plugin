@@ -1,6 +1,17 @@
 Release Notes
 =========
 
+
+1.5.3
+-----
+
+Date: 2016-12-16
+
+Changes:
+
+* fix [#44](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/44) default hostname selector should fallback to privateIpAddress
+* fix [#10](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/10) add conjoined selector values using `+` and quoted literals
+
 1.5.2
 ---
 
