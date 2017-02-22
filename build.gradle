@@ -6,7 +6,7 @@ buildscript {
 }
 
 plugins {
-    id 'pl.allegro.tech.build.axion-release' version '1.3.2'
+    id 'pl.allegro.tech.build.axion-release' version '1.5.0'
 }
 
 apply plugin: 'java'
@@ -17,6 +17,7 @@ sourceCompatibility = 1.6
 defaultTasks 'clean', 'build'
 ext.rundeckPluginVersion = '1.1'
 scmVersion {
+    ignoreUncommittedChanges = false
     tag {
         prefix = 'v'
         versionSeparator = ''
