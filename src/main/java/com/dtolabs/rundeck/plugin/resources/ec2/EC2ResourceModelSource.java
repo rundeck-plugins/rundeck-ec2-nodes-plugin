@@ -40,6 +40,8 @@ import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
+
 /**
  * EC2ResourceModelSource produces nodes by querying the AWS EC2 API to list instances.
  * <p/>
@@ -186,6 +188,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             clientConfiguration.setProxyUsername(httpProxyUser);
             clientConfiguration.setProxyPassword(httpProxyPass);
         }
+        queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
         
         initialize();
     }
