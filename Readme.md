@@ -35,7 +35,8 @@ Here are the configuration properties:
 * `accessKey`: API AccessKey value (if not using IAM profile)
 * `secretKey`: API SecretKey value (if not using IAM profile)
 * `endpoint` - the URL of the AWS **endpoint** to use, or blank for the default endpoint (see [Amazon EC2 Regions and Endpoints](http://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region))
-* `refreshInterval`: Time in seconds used as minimum interval between calls to the AWS API. (default 30)
+* `synchronousLoad`: Do not use internal async loading behavior. (boolean, default: true)
+* `refreshInterval`: Unless using Synchronous Loading, time in seconds used as minimum interval between calls to the AWS API. (default 30)
 * `filter` A set of ";" separated query filters ("$Name=$Value") for the AWS EC2 API, see below.
 * `runningOnly`: if "true", automatically filter the * instances by "instance-state-name=running"
 * `useDefaultMapping`: if "true", base all mapping definitions off the default mapping provided.
@@ -43,6 +44,10 @@ Here are the configuration properties:
 * `mappingFile`: Path to a java properties-formatted mapping definition file.
 
 If you leave `accessKey` and `secretKey` blank, the EC2 IAM profile will be used.
+
+Note: Rundeck 2.6.3+ uses an asynchronous nodes cache by
+default. You should enable `synchronousLoad` if you are using the
+rundeck nodes cache, or set the `refreshInterval` to 0.
 
 ## Filter definition
 
