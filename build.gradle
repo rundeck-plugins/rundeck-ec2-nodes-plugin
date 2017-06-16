@@ -63,8 +63,8 @@ dependencies {
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
 
-    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.9.0'
-    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.9.0'
+    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.148'
+    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.11.148'
 
     testCompile "org.codehaus.groovy:groovy-all:2.3.7"
     testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
