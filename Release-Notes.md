@@ -1,6 +1,14 @@
 Release Notes
 =========
 
+1.5.4
+-----
+
+Date: 2017-02-23
+
+Changes:
+
+* Fix [#61](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/61) add synchronousLoad to disable asynchronous behavior
 
 1.5.3
 -----
