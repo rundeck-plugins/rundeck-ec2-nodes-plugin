@@ -1,6 +1,15 @@
 Release Notes
 =========
 
+1.5.5
+-----
+
+Date: 2017-06-19
+
+Changegs:
+
+* Fix [#67](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/67) Update aws-sdk to 1.11.148
+
 1.5.4
 -----
 
