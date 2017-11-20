@@ -180,7 +180,7 @@ class InstanceToNodeMapper {
             for (final String filterParam : getFilterParams()) {
                 final String[] x = filterParam.split("=", 2);
                 if (!"".equals(x[0]) && !"".equals(x[1])) {
-                    filters.add(new Filter(x[0]).withValues(x[1]));
+                    filters.add(new Filter(x[0]).withValues(x[1].split(",")));
                 }
             }
         }
