@@ -2,4 +2,5 @@
 *.ipr
 *.iml
 *.iws
+.idea/
 build/

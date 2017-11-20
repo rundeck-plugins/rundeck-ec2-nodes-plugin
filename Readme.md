@@ -19,6 +19,11 @@ Download from the [releases page](https://github.com/rundeck-plugins/rundeck-ec2
 
 Put the `rundeck-ec2-nodes-plugin-1.3.jar` into your `$RDECK_BASE/libext` dir.
 
+Release Notes
+-------------
+
+[Release Notes](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/blob/master/Release-Notes.md)
+
 Usage
 -----
 

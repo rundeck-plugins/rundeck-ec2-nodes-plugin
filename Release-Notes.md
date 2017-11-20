@@ -1,6 +1,23 @@
 Release Notes
 =========
 
+1.5.5
+-----
+
+Date: 2017-06-19
+
+Changegs:
+
+* Fix [#67](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/67) Update aws-sdk to 1.11.148
+
+1.5.4
+-----
+
+Date: 2017-02-23
+
+Changes:
+
+* Fix [#61](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/61) add synchronousLoad to disable asynchronous behavior
 
 1.5.3
 -----
