@@ -16,10 +16,10 @@
 
 /*
 * EC2ResourceModelSource.java
-* 
+*
 * User: Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
 * Created: 9/1/11 4:34 PM
-* 
+*
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
@@ -76,7 +76,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
 
     AWSCredentials credentials;
     ClientConfiguration clientConfiguration = new ClientConfiguration();;
-    
+
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
     InstanceToNodeMapper mapper;
@@ -138,7 +138,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
         int proxyPort = 80;
-        
+
         final String proxyPortStr = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PORT);
         if (null != proxyPortStr && !"".equals(proxyPortStr)) {
             try {
@@ -181,7 +181,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }else{
             assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
         }
-        
+
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
             clientConfiguration.setProxyHost(httpProxyHost);
             clientConfiguration.setProxyPort(httpProxyPort);
@@ -189,7 +189,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             clientConfiguration.setProxyPassword(httpProxyPass);
         }
         queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
-        
+
         initialize();
     }
 
@@ -200,7 +200,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
         loadMapping();
         if (this.credentials == null && assumeRoleArn != null) {
-            AWSSecurityTokenServiceClient sts_client = new AWSSecurityTokenServiceClient();
+            AWSSecurityTokenServiceClient sts_client = new AWSSecurityTokenServiceClient(clientConfiguration);
             //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
             AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
             assumeRoleRequest.setRoleArn(assumeRoleArn);
