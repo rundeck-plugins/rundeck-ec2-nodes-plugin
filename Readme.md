@@ -56,7 +56,13 @@ rundeck nodes cache, or set the `refreshInterval` to 0.
 
 ## Filter definition
 
-The syntax for defining filters uses `$Name=$Value[;$Name=$value[;...]]` for any of the allowed filter names (see [DescribeInstances][1] for the available filter Names).  *Note*: you do not need to specify `Filter.1.Name=$Name`, etc. as described in the EC2 API documentation, this will handled for you.  Simply list the Name = Value pairs, separated by `;`.
+The syntax for defining filters uses `$Name=$Value1,$Value2[;$Name=$value[;...]]`
+for any of the allowed filter names (see [DescribeInstances][1] for the available filter Names).
+
+*Note*: you do not need to specify `Filter.1.Name=$Name`, etc. as described in the EC2 API documentation,
+this will handled for you.  Simply list the Name = Value pairs, separated by `;`.
+
+You can specify multiple values in the filter by separating the values with `,`.
 
  [1]: http://docs.amazonwebservices.com/AWSEC2/latest/APIReference/ApiReference-query-DescribeInstances.html
 
@@ -71,6 +77,10 @@ Example: to filter *any* instance with a Tag named `MyTag`:
 Example combining matching a tag value and the instance type:
 
     tag:MyTag=Some Tag Value;instance-type=m1.small
+
+Example including two instance types, the results will have one or the other instance-type:
+
+    instance-type=m1.small,m1.large
 
 Mapping Definition
 ----------

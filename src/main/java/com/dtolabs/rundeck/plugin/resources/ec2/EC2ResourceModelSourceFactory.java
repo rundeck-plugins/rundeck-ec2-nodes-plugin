@@ -120,7 +120,17 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                                                 ))
             .property(PropertyUtil.integer(REFRESH_INTERVAL, "Async Refresh Interval",
                     "Unless using Synchronous Loading, minimum time in seconds between API requests to AWS (default is 30)", false, "30"))
-            .property(PropertyUtil.string(FILTER_PARAMS, "Filter Params", "AWS EC2 filters", false, null))
+                                                .property(PropertyUtil.string(
+                                                        FILTER_PARAMS,
+                                                        "Filter Params",
+                                                        "AWS EC2 filters, in the form `Filter=Value`.\n\nYou can "
+                                                        + "specify multiple filters by separating them with `;`, and "
+                                                        + "you can specify multiple values by separating them with `,"
+                                                        + "`.  See [AWS DescribeInstances](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html) for more information about filters.\n\n"
+                                                        + "Example: `tag:MyTag=Some Tag Value;instance-type=m1.small,m1.large`",
+                                                        false,
+                                                        null
+                                                ))
             .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default", false, null))
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
             .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
