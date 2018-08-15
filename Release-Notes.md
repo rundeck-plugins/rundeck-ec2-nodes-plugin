@@ -1,6 +1,17 @@
 Release Notes
 =========
 
+1.5.6
+-----
+
+Date: 2018-08-15
+
+Changes:
+
+* Support multiple values in aws filter: [#80](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/pull/80)
+	* use "FilterName=Value1,Value2;FilterName2=Value1,Value2" etc
+* Fixed [#56](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/issues/56) missing clientConfiguration from STS api call
+
 1.5.5
 -----
 
