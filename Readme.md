@@ -3,6 +3,8 @@ Rundeck EC2 Nodes Plugin
 
 Version: 1.5
 
+[![Build Status](https://travis-ci.org/rundeck-plugins/rundeck-ec2-nodes-plugin.svg?branch=master)](https://travis-ci.org/rundeck-plugins/rundeck-ec2-nodes-plugin)
+
 This is a Resource Model Source plugin for [RunDeck][] 1.5+ that provides
 Amazon EC2 Instances as nodes for the RunDeck server.
 
