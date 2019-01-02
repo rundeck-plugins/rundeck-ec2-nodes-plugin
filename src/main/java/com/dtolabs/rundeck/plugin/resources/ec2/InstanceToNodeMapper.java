@@ -39,6 +39,7 @@ import org.apache.log4j.Logger;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -74,7 +75,7 @@ class InstanceToNodeMapper {
      * Perform the query and return the set of instances
      *
      */
-    public INodeSet performQuery() {
+    public NodeSetImpl performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
         
         final AmazonEC2Client ec2 ;
@@ -87,76 +88,31 @@ class InstanceToNodeMapper {
             ec2.setEndpoint(getEndpoint());
         }
         final ArrayList<Filter> filters = buildFilters();
-        final Set<Instance> instances = query(ec2, new DescribeInstancesRequest().withFilters(filters));
 
+        
+        final Set<Instance> instances = query(ec2, new DescribeInstancesRequest().withFilters(filters));
 
         mapInstances(nodeSet, instances);
         return nodeSet;
     }
 
-    /**
-     * Perform the query asynchronously and return the set of instances
-     *
-     */
-    public Future<INodeSet> performQueryAsync() {
-        
-        final AmazonEC2AsyncClient ec2 ;
-        if(null!=credentials){
-            ec2= new AmazonEC2AsyncClient(credentials, clientConfiguration, executorService);
-        } else{
-            ec2 = new AmazonEC2AsyncClient(new DefaultAWSCredentialsProviderChain(), clientConfiguration, executorService);
-        }
-        if (null != getEndpoint()) {
-            ec2.setEndpoint(getEndpoint());
-        }
-        final ArrayList<Filter> filters = buildFilters();
-
-        final Future<DescribeInstancesResult> describeInstancesRequest = ec2.describeInstancesAsync(
-            new DescribeInstancesRequest().withFilters(filters));
-
-        return new Future<INodeSet>() {
-
-            public boolean cancel(boolean b) {
-                return describeInstancesRequest.cancel(b);
-            }
-
-            public boolean isCancelled() {
-                return describeInstancesRequest.isCancelled();
-            }
-
-            public boolean isDone() {
-                return describeInstancesRequest.isDone();
-            }
-
-            public INodeSet get() throws InterruptedException, ExecutionException {
-                DescribeInstancesResult describeInstancesResult = describeInstancesRequest.get();
-
-                final NodeSetImpl nodeSet = new NodeSetImpl();
-                final Set<Instance> instances = examineResult(describeInstancesResult);
-
-                mapInstances(nodeSet, instances);
-                return nodeSet;
-            }
-
-            public INodeSet get(final long l, final TimeUnit timeUnit) throws InterruptedException, ExecutionException,
-                TimeoutException {
-                DescribeInstancesResult describeInstancesResult = describeInstancesRequest.get(l, timeUnit);
-
-                final NodeSetImpl nodeSet = new NodeSetImpl();
-                final Set<Instance> instances = examineResult(describeInstancesResult);
-
-                mapInstances(nodeSet, instances);
-                return nodeSet;
-            }
-        };
-    }
-
     private Set<Instance> query(final AmazonEC2Client ec2, final DescribeInstancesRequest request) {
         //create "running" filter
+        final Set<Instance> instances = new HashSet<Instance>();
 
-        final DescribeInstancesResult describeInstancesRequest = ec2.describeInstances(request);
+        String token = null;
+        do {
+            final DescribeInstancesRequest pagedRequest = request.clone();
+            pagedRequest.setNextToken(token);
 
-        return examineResult(describeInstancesRequest);
+            final DescribeInstancesResult describeInstancesRequest = ec2.describeInstances(pagedRequest);
+
+            token = describeInstancesRequest.getNextToken();
+
+            instances.addAll(examineResult(describeInstancesRequest));
+        } while(token != null);
+
+        return instances;
     }
 
     private Set<Instance> examineResult(DescribeInstancesResult describeInstancesRequest) {

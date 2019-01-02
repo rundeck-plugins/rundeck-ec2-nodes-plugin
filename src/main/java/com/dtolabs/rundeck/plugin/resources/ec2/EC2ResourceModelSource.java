@@ -38,6 +38,8 @@ import org.apache.log4j.Logger;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
@@ -80,6 +82,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
     InstanceToNodeMapper mapper;
+
+    ExecutorService executor = Executors.newFixedThreadPool(1);
 
     static {
         final String mapping = "nodename.selector=tags/Name,instanceId\n"
@@ -224,23 +228,32 @@ public class EC2ResourceModelSource implements ResourceModelSource {
 
     public synchronized INodeSet getNodes() throws ResourceModelSourceException {
         checkFuture();
+
+        // Return cached results if not time to refresh
         if (!needsRefresh()) {
             if (null != iNodeSet) {
                 logger.info("Returning " + iNodeSet.getNodeNames().size() + " cached nodes from EC2");
             }
             return iNodeSet;
         }
-        if (lastRefresh > 0 && queryAsync && null == futureResult) {
-            futureResult = mapper.performQueryAsync();
-            lastRefresh = System.currentTimeMillis();
-        } else if (!queryAsync || lastRefresh < 1) {
-            //always perform synchronous query the first time
-            iNodeSet = mapper.performQuery();
-            lastRefresh = System.currentTimeMillis();
+
+        // Tee up a new background fetch if there is not one running
+        if (futureResult == null) {
+            futureResult = executor.submit(() -> {
+                return mapper.performQuery();
+            });
         }
+
+        // If async is not set or this is first refresh we wait for the results
+        if (!queryAsync || lastRefresh < 1) {
+            getFutureValue();
+        }
+
         if (null != iNodeSet) {
             logger.info("Read " + iNodeSet.getNodeNames().size() + " nodes from EC2");
         }
+
+        lastRefresh = System.currentTimeMillis();
         return iNodeSet;
     }
 
@@ -249,15 +262,19 @@ public class EC2ResourceModelSource implements ResourceModelSource {
      */
     private void checkFuture() {
         if (null != futureResult && futureResult.isDone()) {
-            try {
-                iNodeSet = futureResult.get();
-            } catch (InterruptedException e) {
-                logger.debug(e);
-            } catch (ExecutionException e) {
-                logger.warn("Error performing query: " + e.getMessage(), e);
-            }
-            futureResult = null;
+            getFutureValue();
         }
+    }
+
+    private void getFutureValue() {
+        try {
+            iNodeSet = futureResult.get();
+        } catch (InterruptedException e) {
+            logger.debug(e);
+        } catch (ExecutionException e) {
+            logger.warn("Error performing query: " + e.getMessage(), e);
+        }
+        futureResult = null;
     }
 
     /**
