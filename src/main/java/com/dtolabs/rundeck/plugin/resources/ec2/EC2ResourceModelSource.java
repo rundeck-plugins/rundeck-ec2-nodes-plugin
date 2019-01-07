@@ -37,10 +37,12 @@ import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
 
@@ -239,23 +241,25 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             return iNodeSet;
         }
 
-        // Tee up a new background fetch if there is not one running
-        if (futureResult == null) {
+        /**
+         * Rundeck now executes getNodes() in a thread pool by default.
+         * If queryAync is false(default now) or this is the first fetch we just block here.
+         */
+        if (lastRefresh > 0 && queryAsync && null == futureResult) {
             futureResult = executor.submit(() -> {
                 return mapper.performQuery();
             });
-        }
-
-        // If async is not set or this is first refresh we wait for the results
-        if (!queryAsync || lastRefresh < 1) {
-            getFutureValue();
+            lastRefresh = System.currentTimeMillis();
+        } else if (!queryAsync || lastRefresh < 1) {
+            //always perform synchronous query the first time
+            iNodeSet = mapper.performQuery();
+            lastRefresh = System.currentTimeMillis();
         }
 
         if (null != iNodeSet) {
             logger.info("Read " + iNodeSet.getNodeNames().size() + " nodes from EC2");
         }
 
-        lastRefresh = System.currentTimeMillis();
         return iNodeSet;
     }
 
