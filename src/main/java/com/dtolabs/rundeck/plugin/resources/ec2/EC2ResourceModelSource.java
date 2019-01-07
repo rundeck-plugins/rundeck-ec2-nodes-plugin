@@ -37,8 +37,12 @@ import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
 
@@ -73,6 +77,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
     final String assumeRoleArn;
+    int pageResults;
 
     AWSCredentials credentials;
     ClientConfiguration clientConfiguration = new ClientConfiguration();;
@@ -80,6 +85,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
     InstanceToNodeMapper mapper;
+
+    ExecutorService executor = Executors.newFixedThreadPool(1);
 
     static {
         final String mapping = "nodename.selector=tags/Name,instanceId\n"
@@ -136,6 +143,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
+        this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
         int proxyPort = 80;
 
@@ -215,7 +223,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
 
 
-        mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration);
+        mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration, pageResults);
         mapper.setFilterParams(params);
         mapper.setEndpoint(endpoint);
         mapper.setRunningStateOnly(runningOnly);
@@ -224,23 +232,34 @@ public class EC2ResourceModelSource implements ResourceModelSource {
 
     public synchronized INodeSet getNodes() throws ResourceModelSourceException {
         checkFuture();
+
+        // Return cached results if not time to refresh
         if (!needsRefresh()) {
             if (null != iNodeSet) {
                 logger.info("Returning " + iNodeSet.getNodeNames().size() + " cached nodes from EC2");
             }
             return iNodeSet;
         }
+
+        /**
+         * Rundeck now executes getNodes() in a thread pool by default.
+         * If queryAync is false(default now) or this is the first fetch we just block here.
+         */
         if (lastRefresh > 0 && queryAsync && null == futureResult) {
-            futureResult = mapper.performQueryAsync();
+            futureResult = executor.submit(() -> {
+                return mapper.performQuery();
+            });
             lastRefresh = System.currentTimeMillis();
         } else if (!queryAsync || lastRefresh < 1) {
             //always perform synchronous query the first time
             iNodeSet = mapper.performQuery();
             lastRefresh = System.currentTimeMillis();
         }
+
         if (null != iNodeSet) {
             logger.info("Read " + iNodeSet.getNodeNames().size() + " nodes from EC2");
         }
+
         return iNodeSet;
     }
 
