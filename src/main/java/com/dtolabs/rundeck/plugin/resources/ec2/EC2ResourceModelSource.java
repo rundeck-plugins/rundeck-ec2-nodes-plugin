@@ -268,19 +268,15 @@ public class EC2ResourceModelSource implements ResourceModelSource {
      */
     private void checkFuture() {
         if (null != futureResult && futureResult.isDone()) {
-            getFutureValue();
+            try {
+                iNodeSet = futureResult.get();
+            } catch (InterruptedException e) {
+                logger.debug(e);
+            } catch (ExecutionException e) {
+                logger.warn("Error performing query: " + e.getMessage(), e);
+            }
+            futureResult = null;
         }
-    }
-
-    private void getFutureValue() {
-        try {
-            iNodeSet = futureResult.get();
-        } catch (InterruptedException e) {
-            logger.debug(e);
-        } catch (ExecutionException e) {
-            logger.warn("Error performing query: " + e.getMessage(), e);
-        }
-        futureResult = null;
     }
 
     /**
