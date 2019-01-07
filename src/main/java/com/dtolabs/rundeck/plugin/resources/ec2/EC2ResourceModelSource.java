@@ -75,6 +75,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
     final String assumeRoleArn;
+    int pageResults;
 
     AWSCredentials credentials;
     ClientConfiguration clientConfiguration = new ClientConfiguration();;
@@ -140,6 +141,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
+        this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
         int proxyPort = 80;
 
@@ -219,7 +221,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
 
 
-        mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration);
+        mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration, pageResults);
         mapper.setFilterParams(params);
         mapper.setEndpoint(endpoint);
         mapper.setRunningStateOnly(runningOnly);

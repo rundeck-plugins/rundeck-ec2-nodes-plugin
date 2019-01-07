@@ -61,14 +61,16 @@ class InstanceToNodeMapper {
     private String endpoint;
     private boolean runningStateOnly = true;
     private Properties mapping;
+    private int maxResults;
 
     /**
      * Create with the credentials and mapping definition
      */
-    InstanceToNodeMapper(final AWSCredentials credentials, final Properties mapping, final ClientConfiguration clientConfiguration) {
+    InstanceToNodeMapper(final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
         this.credentials = credentials;
         this.mapping = mapping;
         this.clientConfiguration = clientConfiguration;
+        this.maxResults = maxResults;
     }
 
     /**
@@ -89,8 +91,7 @@ class InstanceToNodeMapper {
         }
         final ArrayList<Filter> filters = buildFilters();
 
-        
-        final Set<Instance> instances = query(ec2, new DescribeInstancesRequest().withFilters(filters));
+        final Set<Instance> instances = query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults));
 
         mapInstances(nodeSet, instances);
         return nodeSet;

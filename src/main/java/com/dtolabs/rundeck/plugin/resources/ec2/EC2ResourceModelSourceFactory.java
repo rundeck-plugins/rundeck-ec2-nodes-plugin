@@ -68,6 +68,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String HTTP_PROXY_PORT = "httpProxyPort";
     public static final String HTTP_PROXY_USER = "httpProxyUser";
     public static final String HTTP_PROXY_PASS = "httpProxyPass";
+    public static final String MAX_RESULTS = "pageResults";
 
     public EC2ResourceModelSourceFactory(final Framework framework) {
         this.framework = framework;
@@ -169,6 +170,9 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                     "Include Running state instances only. If false, all instances will be returned that match your " +
                             "filters.",
                     false, "true"))
+            .property(PropertyUtil.integer(MAX_RESULTS, "Max API Results",
+                    "Max number of reservations returned per AWS API call.",
+                    false, "100"))
 
             .build();
 
