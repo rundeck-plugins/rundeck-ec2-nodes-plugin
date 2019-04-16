@@ -49,6 +49,7 @@ Here are the configuration properties:
 * `useDefaultMapping`: if "true", base all mapping definitions off the default mapping provided.
 * `mappingParams`: A set of ";" separated mapping entries
 * `mappingFile`: Path to a java properties-formatted mapping definition file.
+* `pageResults`: Max elements per page for AWS API calls - REQUIRED
 
 If you leave `accessKey` and `secretKey` blank, the EC2 IAM profile will be used.
 
