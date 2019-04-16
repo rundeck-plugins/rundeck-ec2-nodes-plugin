@@ -81,6 +81,13 @@ jar {
     //include contents of output dir
     from "$buildDir/output"
     manifest {
+        attributes 'Rundeck-Plugin-Name': 'EC2 Nodes Plugin'
+        attributes 'Rundeck-Plugin-Description': 'Resource Model Source plugin that provides Amazon EC2 Instances as nodes.'
+        attributes 'Rundeck-Plugin-Rundeck-Compatibility-Version': '2.2.2+'
+        attributes 'Rundeck-Plugin-Tags': 'java,aws,ec2,resource model'
+        attributes 'Rundeck-Plugin-License': 'Apache 2.0'
+        attributes 'Rundeck-Plugin-Author': 'Rundeck, Inc.'
+        attributes 'Rundeck-Plugin-Source-Link': 'https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin'
         attributes 'Rundeck-Plugin-Version': rundeckPluginVersion, 'Rundeck-Plugin-Archive': 'true', 'Rundeck-Plugin-Libs-Load-First':'false'
         //create space-separated list of pluginLibs
         def libList = configurations.pluginLibs.collect{'lib/'+it.name}.join(' ')
