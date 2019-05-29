@@ -46,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * InstanceToNodeMapper produces Rundeck node definitions from EC2 Instances
@@ -110,7 +111,37 @@ class InstanceToNodeMapper {
 
             token = describeInstancesRequest.getNextToken();
 
-            instances.addAll(examineResult(describeInstancesRequest));
+            Set<Instance> originalInstances = examineResult(describeInstancesRequest);
+
+            Map<String,Image> ec2Images = new HashMap<>();
+            List<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toList());
+            logger.debug("Image list: " + imagesList.toString());
+            try{
+                DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
+                describeImagesRequest.setImageIds(imagesList);
+
+                DescribeImagesResult result = ec2.describeImages(describeImagesRequest);
+                for(Image image :result.getImages()){
+                    ec2Images.put(image.getImageId(),image);
+                }
+            }catch(Exception e){
+                logger.error("error getting image info" +  e.getMessage());
+            }
+
+            for (final Instance inst : originalInstances) {
+                if(ec2Images.containsKey(inst.getImageId())){
+                    Ec2Instance customInstance = Ec2Instance.builder(inst);
+                    Image image = ec2Images.get(inst.getImageId());
+                    customInstance.setImageName(image.getName());
+                    instances.add(customInstance);
+                }else{
+                    Ec2Instance customInstance = Ec2Instance.builder(inst);
+                    customInstance.setImageName("Not found");
+                    logger.debug("Image not found" + inst.getImageId());
+                    instances.add(customInstance);
+                }
+            }
+
         } while(token != null);
 
         return instances;
