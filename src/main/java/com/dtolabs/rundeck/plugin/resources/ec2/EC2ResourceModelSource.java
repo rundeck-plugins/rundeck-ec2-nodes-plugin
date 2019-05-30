@@ -37,10 +37,12 @@ import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
 
@@ -70,7 +72,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     String mappingParams;
     File mappingFile;
     boolean useDefaultMapping = true;
-    boolean runningOnly = false;
+    boolean runningOnly = true;
     boolean queryAsync = true;
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
@@ -195,8 +197,6 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             clientConfiguration.setProxyPassword(httpProxyPass);
         }
         queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
-
-        logger.info("[debug] runningOnly:" + runningOnly);
 
         initialize();
     }
