@@ -25,12 +25,9 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import com.amazonaws.services.ec2.AmazonEC2AsyncClient;
 import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
-import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
 import com.dtolabs.rundeck.core.common.NodeSetImpl;
 import org.apache.commons.beanutils.BeanUtils;
@@ -39,11 +36,6 @@ import org.apache.log4j.Logger;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -63,6 +55,9 @@ class InstanceToNodeMapper {
     private boolean runningStateOnly = true;
     private Properties mapping;
     private int maxResults;
+    private AmazonEC2Client ec2 ;
+
+    private static final String[] extraInstanceMappingAttributes= {"imageName"};
 
     /**
      * Create with the credentials and mapping definition
@@ -75,24 +70,39 @@ class InstanceToNodeMapper {
     }
 
     /**
+     * Create with the credentials and mapping definition
+     */
+    InstanceToNodeMapper(final AmazonEC2Client ec2, final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
+        this.credentials = credentials;
+        this.mapping = mapping;
+        this.clientConfiguration = clientConfiguration;
+        this.maxResults = maxResults;
+        this.ec2 = ec2;
+
+
+    }
+
+    /**
      * Perform the query and return the set of instances
      *
      */
     public NodeSetImpl performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
-        
-        final AmazonEC2Client ec2 ;
-        if(null!=credentials) {
-            ec2 = new AmazonEC2Client(credentials, clientConfiguration);
-        } else{
-            ec2 = new AmazonEC2Client(clientConfiguration);
+
+        if(ec2 ==null) {
+            if (null != credentials) {
+                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+            } else {
+                ec2 = new AmazonEC2Client(clientConfiguration);
+            }
         }
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }
+
         final ArrayList<Filter> filters = buildFilters();
 
-        final Set<Instance> instances = query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults));
+        final Set<Instance> instances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
 
         mapInstances(nodeSet, instances);
         return nodeSet;
@@ -111,37 +121,7 @@ class InstanceToNodeMapper {
 
             token = describeInstancesRequest.getNextToken();
 
-            Set<Instance> originalInstances = examineResult(describeInstancesRequest);
-
-            Map<String,Image> ec2Images = new HashMap<>();
-            List<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toList());
-            logger.debug("Image list: " + imagesList.toString());
-            try{
-                DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
-                describeImagesRequest.setImageIds(imagesList);
-
-                DescribeImagesResult result = ec2.describeImages(describeImagesRequest);
-                for(Image image :result.getImages()){
-                    ec2Images.put(image.getImageId(),image);
-                }
-            }catch(Exception e){
-                logger.error("error getting image info" +  e.getMessage());
-            }
-
-            for (final Instance inst : originalInstances) {
-                if(ec2Images.containsKey(inst.getImageId())){
-                    Ec2Instance customInstance = Ec2Instance.builder(inst);
-                    Image image = ec2Images.get(inst.getImageId());
-                    customInstance.setImageName(image.getName());
-                    instances.add(customInstance);
-                }else{
-                    Ec2Instance customInstance = Ec2Instance.builder(inst);
-                    customInstance.setImageName("Not found");
-                    logger.debug("Image not found" + inst.getImageId());
-                    instances.add(customInstance);
-                }
-            }
-
+            instances.addAll(examineResult(describeInstancesRequest));
         } while(token != null);
 
         return instances;
@@ -491,6 +471,65 @@ class InstanceToNodeMapper {
         public GeneratorException(final Throwable cause) {
             super(cause);
         }
+    }
+
+    public Set<Instance> addExtraMappingAttribute(Set<Instance> instances){
+        for(String extraAttribute: Arrays.asList(extraInstanceMappingAttributes)){
+            if(mappingHasExtraAttribute(extraAttribute)){
+                if(extraAttribute.equals("imageName")){
+                    instances = addingImageName(instances);
+                }
+            }
+        }
+        return instances;
+    }
+
+    public boolean mappingHasExtraAttribute(String extraAttribute){
+        if(mapping.containsValue(extraAttribute)){
+            return true;
+        }else{
+            for (String key : mapping.stringPropertyNames()) {
+                if(mapping.getProperty(key).contains(extraAttribute)){
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public Set<Instance> addingImageName(Set<Instance> originalInstances){
+        Set<Instance> instances = new HashSet<>();
+        Map<String,Image> ec2Images = new HashMap<>();
+        List<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toList());
+        logger.debug("Image list: " + imagesList.toString());
+        try{
+            DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
+            describeImagesRequest.setImageIds(imagesList);
+
+            DescribeImagesResult result = ec2.describeImages(describeImagesRequest);
+
+            for(Image image :result.getImages()){
+                ec2Images.put(image.getImageId(),image);
+            }
+        }catch(Exception e){
+            logger.error("error getting image info" +  e.getMessage());
+        }
+
+        for (final Instance inst : originalInstances) {
+            if(ec2Images.containsKey(inst.getImageId())){
+                Ec2Instance customInstance = Ec2Instance.builder(inst);
+                Image image = ec2Images.get(inst.getImageId());
+                customInstance.setImageName(image.getName());
+                instances.add(customInstance);
+            }else{
+                Ec2Instance customInstance = Ec2Instance.builder(inst);
+                customInstance.setImageName("Not found");
+                logger.debug("Image not found" + inst.getImageId());
+                instances.add(customInstance);
+            }
+        }
+
+        return instances;
     }
 
 }

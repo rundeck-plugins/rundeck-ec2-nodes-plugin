@@ -68,6 +68,7 @@ dependencies {
 
     testCompile "org.codehaus.groovy:groovy-all:2.3.7"
     testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
+    testCompile "cglib:cglib-nodep:2.2.2"
 }
 
 // task to copy plugin libs to output/lib dir

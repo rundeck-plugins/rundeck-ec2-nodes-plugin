@@ -245,6 +245,7 @@ EC2 fields:
 * architecture
 * clientToken
 * imageId
+* imageName
 * instanceId
 * instanceLifecycle
 * instanceType

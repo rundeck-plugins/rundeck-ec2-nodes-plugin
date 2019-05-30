@@ -1,8 +1,16 @@
 package com.dtolabs.rundeck.plugin.resources.ec2
 
+import com.amazonaws.ClientConfiguration
+import com.amazonaws.auth.AWSCredentials
+import com.amazonaws.services.ec2.AmazonEC2Client
+import com.amazonaws.services.ec2.model.DescribeImagesRequest
+import com.amazonaws.services.ec2.model.DescribeImagesResult
+import com.amazonaws.services.ec2.model.DescribeInstancesResult
+import com.amazonaws.services.ec2.model.Image
 import com.amazonaws.services.ec2.model.Instance
 import com.amazonaws.services.ec2.model.InstanceState
 import com.amazonaws.services.ec2.model.InstanceStateName
+import com.amazonaws.services.ec2.model.Reservation
 import com.amazonaws.services.ec2.model.Tag
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -154,11 +162,88 @@ class InstanceToNodeMapperSpec extends Specification {
         i.withTags(new Tag('Name', 'bob'), new Tag('env', 'PROD'))
         i.setInstanceId("aninstanceId")
         i.setArchitecture("anarch")
+        i.setImageId("ami-something")
 
         def state = new InstanceState()
         state.setName(InstanceStateName.Running)
         i.setState(state)
         i.setPrivateIpAddress('127.0.9.9')
         return i
+    }
+
+    private static Image mkImage(){
+        Image image = new Image()
+        image.setImageId("ami-something")
+        image.setName("AMISomething")
+        return image
+    }
+
+    def "extra mapping image"() {
+        given:
+
+        Instance instance = mkInstance()
+        Image image = mkImage()
+        Reservation reservertion = Mock(Reservation){
+            getInstances()>>[instance]
+        }
+        AmazonEC2Client ec2 = Mock(AmazonEC2Client){
+            describeInstances(_) >> Mock(DescribeInstancesResult){
+                getReservations() >> [reservertion]
+            }
+            describeImages(_) >> Mock(DescribeImagesResult){
+                getImages()>>[image]
+            }
+        }
+
+        AWSCredentials credentials = Mock(AWSCredentials)
+        ClientConfiguration clientConfiguration = Mock(ClientConfiguration)
+
+        int pageResults = 100
+        Properties mapping = new Properties()
+        mapping.put("ami_image.selector",mapperValue)
+        def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
+        when:
+        def instances = mapper.performQuery()
+        then:
+        instances!=null
+        instances.getNode("aninstanceId").getAttributes().containsKey(expected)
+
+        where:
+        mapperValue | expected
+        'imageName' | "ami_image"
+        'imageId+"-"+imageName' | "ami_image"
+    }
+
+
+
+    def "extra mapping not calling image list"() {
+        given:
+
+        Instance instance = mkInstance()
+        Image image = mkImage()
+        Reservation reservertion = Mock(Reservation){
+            getInstances()>>[instance]
+        }
+        AmazonEC2Client ec2 = Mock(AmazonEC2Client){
+            describeInstances(_) >> Mock(DescribeInstancesResult){
+                getReservations() >> [reservertion]
+            }
+            describeImages(_) >> Mock(DescribeImagesResult){
+                getImages()>>[image]
+            }
+        }
+
+        AWSCredentials credentials = Mock(AWSCredentials)
+        ClientConfiguration clientConfiguration = Mock(ClientConfiguration)
+
+        int pageResults = 100
+        Properties mapping = new Properties()
+        mapping.put("nodename.selector","instanceId")
+        def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
+        when:
+        def instances = mapper.performQuery()
+        then:
+        instances!=null
+        0*ec2.describeImages(_)
     }
 }
