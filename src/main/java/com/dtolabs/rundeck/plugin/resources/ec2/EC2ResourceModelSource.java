@@ -72,7 +72,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     String mappingParams;
     File mappingFile;
     boolean useDefaultMapping = true;
-    boolean runningOnly = true;
+    boolean runningOnly = false;
     boolean queryAsync = true;
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
@@ -182,6 +182,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         if (configuration.containsKey(EC2ResourceModelSourceFactory.RUNNING_ONLY)) {
             runningOnly = Boolean.parseBoolean(configuration.getProperty(
                 EC2ResourceModelSourceFactory.RUNNING_ONLY));
+            logger.info("[debug] runningOnly:" + runningOnly);
         }
         if (null != accessKey && null != secretKey) {
             credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
