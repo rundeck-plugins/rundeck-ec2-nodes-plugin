@@ -37,7 +37,7 @@ import java.util.*;
 /**
  * EC2ResourceModelSourceFactory is the factory that can create a {@link ResourceModelSource} based on a configuration.
  * <p/>
- * The configuration properties are: <ul> <li>endpoint: the AWS endpoint to use, or blank for the default</li>
+ * The configuration properties are: <ul> <li>endpoint: the AWS endpoint to use, or blank for the default (us-east-1)</li>
  * <li>filter: A set of ";" separated query filters ("filter=value") for the AWS EC2 API, see <a
  * href="http://docs.amazonwebservices.com/AWSEC2/latest/APIReference/ApiReference-query-DescribeInstances.html">DescribeInstances</a></li>
  * <li>mappingParams: A set of ";" separated mapping entries</li> <li>runningOnly: if "true", automatically filter the
