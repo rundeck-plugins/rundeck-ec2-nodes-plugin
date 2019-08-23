@@ -56,15 +56,21 @@ repositories {
 }
 dependencies {
     compile group: 'org.rundeck', name: 'rundeck-core', version: '2.2.2'
+    compile "com.amazonaws:aws-java-sdk-core:1.11.616"
+    compile "com.fasterxml.jackson.core:jackson-databind:2.9.9.3"
+    compile group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
 
-    pluginLibs group: 'commons-beanutils', name: 'commons-beanutils', version: '1.7.0'
-    pluginLibs group: 'dom4j', name: 'dom4j', version: '1.6.1'
     pluginLibs group: 'apache-log4j', name: 'apache-log4j', version: '1.2.15'
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
 
-    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.148'
-    pluginLibs group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.11.148'
+    pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.616') {
+        exclude group: "com.fasterxml.jackson.core"
+    }
+
+    pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.11.616') {
+        exclude group: "com.fasterxml.jackson.core"
+    }
 
     testCompile "org.codehaus.groovy:groovy-all:2.3.7"
     testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
