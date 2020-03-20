@@ -57,6 +57,7 @@ repositories {
 dependencies {
     compile group: 'org.rundeck', name: 'rundeck-core', version: '2.2.2'
     compile "com.amazonaws:aws-java-sdk-core:1.11.743"
+    compile "com.amazonaws:aws-java-sdk-sts:1.11.743"
     compile "com.fasterxml.jackson.core:jackson-databind:2.9.9.3"
     compile group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
 
