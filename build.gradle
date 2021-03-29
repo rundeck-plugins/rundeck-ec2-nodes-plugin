@@ -6,7 +6,7 @@ buildscript {
 }
 
 plugins {
-    id 'pl.allegro.tech.build.axion-release' version '1.5.0'
+    id 'pl.allegro.tech.build.axion-release' version '1.9.3'
 }
 
 apply plugin: 'java'
@@ -55,22 +55,24 @@ repositories {
     }
 }
 dependencies {
+    compile group:"org.slf4j", name:"slf4j-api", version:"1.7.30"
     compile group: 'org.rundeck', name: 'rundeck-core', version: '2.2.2'
     compile "com.amazonaws:aws-java-sdk-core:1.11.743"
     compile "com.amazonaws:aws-java-sdk-sts:1.11.743"
-    compile "com.fasterxml.jackson.core:jackson-databind:2.9.9.3"
+    compile "com.fasterxml.jackson.core:jackson-databind:2.10.5.1"
     compile group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
 
-    pluginLibs group: 'apache-log4j', name: 'apache-log4j', version: '1.2.15'
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
     pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
 
     pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.743') {
         exclude group: "com.fasterxml.jackson.core"
+        exclude group: "com.fasterxml.jackson.dataformat"
     }
 
     pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.11.743') {
         exclude group: "com.fasterxml.jackson.core"
+        exclude group: "com.fasterxml.jackson.dataformat"
     }
 
     testCompile "org.codehaus.groovy:groovy-all:2.3.7"
@@ -107,6 +109,3 @@ jar {
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '3.5.1'
-}

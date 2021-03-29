@@ -31,7 +31,8 @@ import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
 import com.dtolabs.rundeck.core.common.NodeSetImpl;
 import org.apache.commons.beanutils.BeanUtils;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.Executors;
@@ -46,8 +47,8 @@ import java.util.stream.Collectors;
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
 class InstanceToNodeMapper {
-    static final Logger logger = Logger.getLogger(InstanceToNodeMapper.class);
-    final AWSCredentials credentials;
+    static final Logger         logger = LoggerFactory.getLogger(InstanceToNodeMapper.class);
+    final        AWSCredentials credentials;
     private ClientConfiguration clientConfiguration;
     private ExecutorService executorService = Executors.newSingleThreadExecutor();
     private ArrayList<String> filterParams;
@@ -164,7 +165,7 @@ class InstanceToNodeMapper {
                     nodeSet.putNode(iNodeEntry);
                 }
             } catch (GeneratorException e) {
-                logger.error(e);
+                logger.error("Generator error",e);
             }
         }
     }
