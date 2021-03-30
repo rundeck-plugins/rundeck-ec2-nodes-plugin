@@ -33,7 +33,8 @@ import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.*;
@@ -58,7 +59,7 @@ import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFac
  * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
  */
 public class EC2ResourceModelSource implements ResourceModelSource {
-    static Logger logger = Logger.getLogger(EC2ResourceModelSource.class);
+    static  Logger logger = LoggerFactory.getLogger(EC2ResourceModelSource.class);
     private String accessKey;
     private String secretKey;
     long refreshInterval = 30000;
@@ -272,7 +273,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             try {
                 iNodeSet = futureResult.get();
             } catch (InterruptedException e) {
-                logger.debug(e);
+                logger.debug("Interrupted",e);
             } catch (ExecutionException e) {
                 logger.warn("Error performing query: " + e.getMessage(), e);
             }
@@ -300,7 +301,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                     fileInputStream.close();
                 }
             } catch (IOException e) {
-                logger.warn(e);
+                logger.warn("Error loading mapping file",e);
             }
         }
         if (null != mappingParams) {
