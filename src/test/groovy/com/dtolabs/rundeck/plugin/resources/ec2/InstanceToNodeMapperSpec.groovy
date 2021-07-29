@@ -197,6 +197,9 @@ class InstanceToNodeMapperSpec extends Specification {
             describeImages(_) >> Mock(DescribeImagesResult){
                 getImages()>>[image]
             }
+            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
+                getAvailabilityZones()>>[]
+            }
         }
 
         AWSCredentials credentials = Mock(AWSCredentials)
@@ -234,6 +237,9 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             describeImages(_) >> Mock(DescribeImagesResult){
                 getImages()>>[image]
+            }
+            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
+                getAvailabilityZones()>>[]
             }
         }
 
