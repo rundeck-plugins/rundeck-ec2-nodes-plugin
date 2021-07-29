@@ -57,6 +57,7 @@ class InstanceToNodeMapper {
     private Properties mapping;
     private int maxResults;
     private AmazonEC2Client ec2 ;
+    private DescribeAvailabilityZonesResult zones;
 
     private static final String[] extraInstanceMappingAttributes= {"imageName"};
 
@@ -89,6 +90,8 @@ class InstanceToNodeMapper {
      */
     public NodeSetImpl performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
+        zones = ec2.describeAvailabilityZones();
+
 
         if(ec2 ==null) {
             if (null != credentials) {
@@ -162,6 +165,11 @@ class InstanceToNodeMapper {
             try {
                 iNodeEntry = InstanceToNodeMapper.instanceToNode(inst, mapping);
                 if (null != iNodeEntry) {
+
+                    String region = getRegionAvailableZone(inst.getPlacement().getAvailabilityZone());
+                    if(region!=null){
+                        iNodeEntry.getAttributes().put("region",region );
+                    }
                     nodeSet.putNode(iNodeEntry);
                 }
             } catch (GeneratorException e) {
@@ -296,6 +304,8 @@ class InstanceToNodeMapper {
         if (sshport != null && !sshport.equals("") && !sshport.equals("22")) {
             node.setHostname(node.getHostname() + ":" + sshport);
         }
+
+
 
         return node;
     }
@@ -531,6 +541,20 @@ class InstanceToNodeMapper {
         }
 
         return instances;
+    }
+
+    private String getRegionAvailableZone(String availableZone){
+
+        String region = null;
+
+        for(AvailabilityZone zone : zones.getAvailabilityZones()) {
+            if (zone.getZoneName().equals(availableZone)){
+                region = zone.getRegionName();
+            }
+        }
+
+
+        return region;
     }
 
 }
