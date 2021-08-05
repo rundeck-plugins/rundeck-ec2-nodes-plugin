@@ -287,6 +287,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
         int pageResults = 100
         Properties mapping = new Properties()
+        mapping.put("region.selector","region")
         def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
         when:
         def instances = mapper.performQuery()
