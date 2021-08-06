@@ -1,6 +1,7 @@
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.services.ec2.model.Instance;
+import com.amazonaws.services.ec2.model.Region;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -10,9 +11,18 @@ import java.util.List;
 public class Ec2Instance extends Instance {
 
     String imageName;
+    String region;
 
     public String getImageName() {
         return imageName;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
     }
 
     public void setImageName(String imageName) {

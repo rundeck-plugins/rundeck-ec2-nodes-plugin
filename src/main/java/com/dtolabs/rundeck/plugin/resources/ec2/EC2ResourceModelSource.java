@@ -114,6 +114,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                                + "tag.terminated.selector=state.name=terminated\n"
                                + "tag.pending.selector=state.name=pending\n"
                                + "state.selector=state.name\n"
+                               + "region.selector=region\n"
                                + "tags.default=ec2\n";
         try {
 

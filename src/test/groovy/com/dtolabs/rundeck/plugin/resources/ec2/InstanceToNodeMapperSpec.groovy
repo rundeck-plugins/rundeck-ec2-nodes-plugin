@@ -3,6 +3,8 @@ package com.dtolabs.rundeck.plugin.resources.ec2
 import com.amazonaws.ClientConfiguration
 import com.amazonaws.auth.AWSCredentials
 import com.amazonaws.services.ec2.AmazonEC2Client
+import com.amazonaws.services.ec2.model.AvailabilityZone
+import com.amazonaws.services.ec2.model.DescribeAvailabilityZonesResult
 import com.amazonaws.services.ec2.model.DescribeImagesRequest
 import com.amazonaws.services.ec2.model.DescribeImagesResult
 import com.amazonaws.services.ec2.model.DescribeInstancesResult
@@ -10,6 +12,7 @@ import com.amazonaws.services.ec2.model.Image
 import com.amazonaws.services.ec2.model.Instance
 import com.amazonaws.services.ec2.model.InstanceState
 import com.amazonaws.services.ec2.model.InstanceStateName
+import com.amazonaws.services.ec2.model.Placement
 import com.amazonaws.services.ec2.model.Reservation
 import com.amazonaws.services.ec2.model.Tag
 import spock.lang.Specification
@@ -163,6 +166,7 @@ class InstanceToNodeMapperSpec extends Specification {
         i.setInstanceId("aninstanceId")
         i.setArchitecture("anarch")
         i.setImageId("ami-something")
+        i.setPlacement(new Placement("us-east-1a"))
 
         def state = new InstanceState()
         state.setName(InstanceStateName.Running)
@@ -192,6 +196,9 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             describeImages(_) >> Mock(DescribeImagesResult){
                 getImages()>>[image]
+            }
+            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
+                getAvailabilityZones()>>[]
             }
         }
 
@@ -231,6 +238,9 @@ class InstanceToNodeMapperSpec extends Specification {
             describeImages(_) >> Mock(DescribeImagesResult){
                 getImages()>>[image]
             }
+            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
+                getAvailabilityZones()>>[]
+            }
         }
 
         AWSCredentials credentials = Mock(AWSCredentials)
@@ -245,5 +255,46 @@ class InstanceToNodeMapperSpec extends Specification {
         then:
         instances!=null
         0*ec2.describeImages(_)
+    }
+
+    def "adding region to the node attributes"() {
+        given:
+
+        Instance instance = mkInstance()
+        Image image = mkImage()
+        List<AvailabilityZone> zones = new ArrayList<>()
+        AvailabilityZone zone1 = new AvailabilityZone()
+        zone1.setRegionName("us-east-1")
+        zone1.setZoneName("us-east-1a")
+
+        Reservation reservertion = Mock(Reservation){
+            getInstances()>>[instance]
+        }
+        AmazonEC2Client ec2 = Mock(AmazonEC2Client){
+            describeInstances(_) >> Mock(DescribeInstancesResult){
+                getReservations() >> [reservertion]
+            }
+            describeImages(_) >> Mock(DescribeImagesResult){
+                getImages()>>[image]
+            }
+            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
+                getAvailabilityZones()>>[zone1]
+            }
+        }
+
+        AWSCredentials credentials = Mock(AWSCredentials)
+        ClientConfiguration clientConfiguration = Mock(ClientConfiguration)
+
+        int pageResults = 100
+        Properties mapping = new Properties()
+        mapping.put("region.selector","region")
+        def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
+        when:
+        def instances = mapper.performQuery()
+        then:
+        instances!=null
+        instances.getNode("aninstanceId").getAttributes().containsKey("region")
+        instances.getNode("aninstanceId").getAttributes().get("region") == "us-east-1"
+
     }
 }

@@ -57,8 +57,9 @@ class InstanceToNodeMapper {
     private Properties mapping;
     private int maxResults;
     private AmazonEC2Client ec2 ;
+    private DescribeAvailabilityZonesResult zones;
 
-    private static final String[] extraInstanceMappingAttributes= {"imageName"};
+    private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
     /**
      * Create with the credentials and mapping definition
@@ -100,6 +101,7 @@ class InstanceToNodeMapper {
         if (null != getEndpoint()) {
             ec2.setEndpoint(getEndpoint());
         }
+        zones = ec2.describeAvailabilityZones();
 
         final ArrayList<Filter> filters = buildFilters();
 
@@ -297,6 +299,8 @@ class InstanceToNodeMapper {
             node.setHostname(node.getHostname() + ":" + sshport);
         }
 
+
+
         return node;
     }
 
@@ -480,6 +484,9 @@ class InstanceToNodeMapper {
                 if(extraAttribute.equals("imageName")){
                     instances = addingImageName(instances);
                 }
+                if(extraAttribute.equals("region")){
+                    instances = addingRegion(instances);
+                }
             }
         }
         return instances;
@@ -517,20 +524,50 @@ class InstanceToNodeMapper {
         }
 
         for (final Instance inst : originalInstances) {
+            Ec2Instance customInstance = Ec2Instance.builder(inst);
+
             if(ec2Images.containsKey(inst.getImageId())){
-                Ec2Instance customInstance = Ec2Instance.builder(inst);
                 Image image = ec2Images.get(inst.getImageId());
                 customInstance.setImageName(image.getName());
-                instances.add(customInstance);
             }else{
-                Ec2Instance customInstance = Ec2Instance.builder(inst);
                 customInstance.setImageName("Not found");
                 logger.debug("Image not found" + inst.getImageId());
-                instances.add(customInstance);
             }
+            instances.add(customInstance);
+
         }
 
         return instances;
+    }
+
+    public Set<Instance> addingRegion(Set<Instance> originalInstances){
+        Set<Instance> instances = new HashSet<>();
+
+        for (final Instance inst : originalInstances) {
+            String region = getRegionAvailableZone(inst.getPlacement().getAvailabilityZone());
+            Ec2Instance customInstance = Ec2Instance.builder(inst);
+
+            if(region!=null){
+                customInstance.setRegion(region);
+            }
+            instances.add(customInstance);
+        }
+
+        return instances;
+    }
+
+    private String getRegionAvailableZone(String availableZone){
+
+        String region = null;
+
+        for(AvailabilityZone zone : zones.getAvailabilityZones()) {
+            if (zone.getZoneName().equals(availableZone)){
+                region = zone.getRegionName();
+            }
+        }
+
+
+        return region;
     }
 
 }
