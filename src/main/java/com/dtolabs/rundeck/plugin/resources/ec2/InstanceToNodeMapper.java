@@ -92,13 +92,11 @@ class InstanceToNodeMapper {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Instance> instances = new HashSet<Instance>();;
-
-        if (getEndpoint().contains(",")) {
-
+        
             String[] regions = getEndpoint().replaceAll("\\s","").split(",");
 
             for (String region : regions) {
-                
+
                 if(ec2 ==null) {
                     if (null != credentials) {
                         ec2 = new AmazonEC2Client(credentials, clientConfiguration);
@@ -117,7 +115,6 @@ class InstanceToNodeMapper {
                     instances.addAll(newInstances);
                 }
             }
-        }
 
         mapInstances(nodeSet, instances);
         return nodeSet;
