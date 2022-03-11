@@ -132,7 +132,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                                                         false,
                                                         null
                                                 ))
-            .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default. Include comma-separated list of endpoints to integrate with multiple regions.\n\n" +
+            .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint to specify region, or blank for default. Include comma-separated list of endpoints to integrate with multiple regions.\n\n" +
                     "Example: `https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com` This would retrieve instances from the `US-WEST-1` and `US-EAST-1` regions.",
                     false,
                     null))
