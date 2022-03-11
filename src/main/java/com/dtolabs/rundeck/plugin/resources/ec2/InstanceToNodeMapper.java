@@ -98,9 +98,7 @@ class InstanceToNodeMapper {
             String[] regions = getEndpoint().replaceAll("\\s","").split(",");
 
             for (String region : regions) {
-
-                logger.info("REGION: " + region);
-
+                
                 if(ec2 ==null) {
                     if (null != credentials) {
                         ec2 = new AmazonEC2Client(credentials, clientConfiguration);
