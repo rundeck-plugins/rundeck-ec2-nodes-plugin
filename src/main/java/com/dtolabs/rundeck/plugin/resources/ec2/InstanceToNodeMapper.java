@@ -91,21 +91,35 @@ class InstanceToNodeMapper {
     public NodeSetImpl performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
-        if(ec2 ==null) {
-            if (null != credentials) {
-                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
-            } else {
-                ec2 = new AmazonEC2Client(clientConfiguration);
+        Set<Instance> instances = new HashSet<Instance>();;
+
+        if (getEndpoint().contains(",")) {
+
+            String[] regions = getEndpoint().replaceAll("\\s","").split(",");
+
+            for (String region : regions) {
+
+                logger.info("REGION: " + region);
+
+                if(ec2 ==null) {
+                    if (null != credentials) {
+                        ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+                    } else {
+                        ec2 = new AmazonEC2Client(clientConfiguration);
+                    }
+                }
+
+                ec2.setEndpoint(region);
+                zones = ec2.describeAvailabilityZones();
+                final ArrayList<Filter> filters = buildFilters();
+
+                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+                if (!newInstances.isEmpty() && newInstances !=null) {
+                    instances.addAll(newInstances);
+                }
             }
         }
-        if (null != getEndpoint()) {
-            ec2.setEndpoint(getEndpoint());
-        }
-        zones = ec2.describeAvailabilityZones();
-
-        final ArrayList<Filter> filters = buildFilters();
-
-        final Set<Instance> instances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
 
         mapInstances(nodeSet, instances);
         return nodeSet;

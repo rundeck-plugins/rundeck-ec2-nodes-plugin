@@ -108,4 +108,3 @@ jar {
 
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
-
