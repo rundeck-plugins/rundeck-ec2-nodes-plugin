@@ -92,7 +92,7 @@ class InstanceToNodeMapper {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Instance> instances = new HashSet<Instance>();;
-        
+
             String[] regions = getEndpoint().replaceAll("\\s","").split(",");
 
             for (String region : regions) {
