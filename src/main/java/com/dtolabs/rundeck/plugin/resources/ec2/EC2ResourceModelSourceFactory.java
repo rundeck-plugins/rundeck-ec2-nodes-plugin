@@ -132,7 +132,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                                                         false,
                                                         null
                                                 ))
-            .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default", false, null))
+            .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint, or blank for default. Include comma-separated list of endpoints to integrate with multiple regions.", false, null))
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
             .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
             .property(PropertyUtil.string(HTTP_PROXY_USER, "HTTP Proxy User", "HTTP Proxy User Name, or blank for default", false, null))
