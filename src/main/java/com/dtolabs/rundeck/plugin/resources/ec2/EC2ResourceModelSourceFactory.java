@@ -133,7 +133,8 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                                                         null
                                                 ))
             .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint to specify region, or blank for default. Include comma-separated list of endpoints to integrate with multiple regions.\n\n" +
-                    "Example: `https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com` This would retrieve instances from the `US-WEST-1` and `US-EAST-1` regions.",
+                    "Example: `https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com` This would retrieve instances from the `US-WEST-1` and `US-EAST-1` regions.\n" +
+                            "Optionally use `ALL_REGIONS` to automatically pull in instances from all regions (except GovCloud).",
                     false,
                     null))
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
