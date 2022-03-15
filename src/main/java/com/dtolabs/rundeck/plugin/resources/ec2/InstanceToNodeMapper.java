@@ -94,25 +94,28 @@ class InstanceToNodeMapper {
 
         Set<Instance> instances = new HashSet<Instance>();;
 
-        String[] regions;
+        ArrayList<String> regions = new ArrayList<>();
+
+        if(ec2 ==null) {
+            if (null != credentials) {
+                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+            } else {
+                ec2 = new AmazonEC2Client(clientConfiguration);
+            }
+        }
 
         if (getEndpoint().equals("ALL_REGIONS")) {
 
-            regions = EC2Endpoints.all_endpoints();
+            DescribeRegionsResult regionsResult = ec2.describeRegions();
+            for (Region region : regionsResult.getRegions()) {
+                regions.add(region.getEndpoint());
+            }
 
         } else {
-            regions = getEndpoint().replaceAll("\\s+","").split(",");
+            regions.addAll(Arrays.asList(getEndpoint().replaceAll("\\s+","").split(",")));
         }
 
         for (String region : regions) {
-
-            if(ec2 ==null) {
-                if (null != credentials) {
-                    ec2 = new AmazonEC2Client(credentials, clientConfiguration);
-                } else {
-                    ec2 = new AmazonEC2Client(clientConfiguration);
-                }
-            }
 
             ec2.setEndpoint(region);
             zones = ec2.describeAvailabilityZones();
@@ -125,7 +128,7 @@ class InstanceToNodeMapper {
             }
 
             try {
-                Thread.sleep(500);
+                Thread.sleep(100);
             } catch(InterruptedException ex) {
                 Thread.currentThread().interrupt();
             }
