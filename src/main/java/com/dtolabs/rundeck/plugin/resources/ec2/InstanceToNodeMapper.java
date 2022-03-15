@@ -94,42 +94,42 @@ class InstanceToNodeMapper {
 
         Set<Instance> instances = new HashSet<Instance>();;
 
-            String[] regions;
+        String[] regions;
 
-            if (getEndpoint().equals("ALL_REGIONS")) {
+        if (getEndpoint().equals("ALL_REGIONS")) {
 
-                regions = EC2Endpoints.all_endpoints();
+            regions = EC2Endpoints.all_endpoints();
 
-            } else {
-                regions = getEndpoint().replaceAll("\\s+","").split(",");
-            }
+        } else {
+            regions = getEndpoint().replaceAll("\\s+","").split(",");
+        }
 
-            for (String region : regions) {
+        for (String region : regions) {
 
-                if(ec2 ==null) {
-                    if (null != credentials) {
-                        ec2 = new AmazonEC2Client(credentials, clientConfiguration);
-                    } else {
-                        ec2 = new AmazonEC2Client(clientConfiguration);
-                    }
-                }
-
-                ec2.setEndpoint(region);
-                zones = ec2.describeAvailabilityZones();
-                final ArrayList<Filter> filters = buildFilters();
-
-                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
-
-                if (!newInstances.isEmpty() && newInstances !=null) {
-                    instances.addAll(newInstances);
-                }
-
-                try {
-                    Thread.sleep(500);
-                } catch(InterruptedException ex) {
-                    Thread.currentThread().interrupt();
+            if(ec2 ==null) {
+                if (null != credentials) {
+                    ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+                } else {
+                    ec2 = new AmazonEC2Client(clientConfiguration);
                 }
             }
+
+            ec2.setEndpoint(region);
+            zones = ec2.describeAvailabilityZones();
+            final ArrayList<Filter> filters = buildFilters();
+
+            final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+            if (!newInstances.isEmpty() && newInstances !=null) {
+                instances.addAll(newInstances);
+            }
+
+            try {
+                Thread.sleep(500);
+            } catch(InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
 
         mapInstances(nodeSet, instances);
         return nodeSet;
