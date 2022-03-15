@@ -106,12 +106,14 @@ class InstanceToNodeMapper {
 
         if (getEndpoint().equals("ALL_REGIONS")) {
 
+            //Retrieve dynamic list of EC2 regions from AWS
             DescribeRegionsResult regionsResult = ec2.describeRegions();
             for (Region region : regionsResult.getRegions()) {
                 regions.add(region.getEndpoint());
             }
 
         } else {
+            //Use comma-separated list of region supplied by user
             regions.addAll(Arrays.asList(getEndpoint().replaceAll("\\s+","").split(",")));
         }
 
