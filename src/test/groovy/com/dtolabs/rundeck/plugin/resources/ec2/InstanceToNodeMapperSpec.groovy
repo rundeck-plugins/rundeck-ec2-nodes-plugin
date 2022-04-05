@@ -209,6 +209,8 @@ class InstanceToNodeMapperSpec extends Specification {
         Properties mapping = new Properties()
         mapping.put("ami_image.selector",mapperValue)
         def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
+        mapper.setEndpoint("us-west-1")
+
         when:
         def instances = mapper.performQuery()
         then:
@@ -250,6 +252,7 @@ class InstanceToNodeMapperSpec extends Specification {
         Properties mapping = new Properties()
         mapping.put("nodename.selector","instanceId")
         def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
+        mapper.setEndpoint("us-west-1")
         when:
         def instances = mapper.performQuery()
         then:
@@ -289,6 +292,7 @@ class InstanceToNodeMapperSpec extends Specification {
         Properties mapping = new Properties()
         mapping.put("region.selector","region")
         def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
+        mapper.setEndpoint("us-east-1")
         when:
         def instances = mapper.performQuery()
         then:

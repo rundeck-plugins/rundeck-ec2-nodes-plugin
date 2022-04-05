@@ -41,7 +41,7 @@ Here are the configuration properties:
 
 * `accessKey`: API AccessKey value (if not using IAM profile)
 * `secretKey`: API SecretKey value (if not using IAM profile)
-* `endpoint` - the URL of the AWS **endpoint** to use, or blank for the default endpoint (see [Amazon EC2 Regions and Endpoints](http://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region))
+* `endpoint` - The URL of the AWS **endpoint** to use, or blank for the default endpoint. Can be a comma-separated list of endpoints (e.g. `https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com`) to integrate with multiple regions. See [Amazon EC2 Regions and Endpoints](http://docs.aws.amazon.com/general/latest/gr/rande.html#ec2_region) for list of endpoints.
 * `synchronousLoad`: Do not use internal async loading behavior. (boolean, default: true)
 * `refreshInterval`: Unless using Synchronous Loading, time in seconds used as minimum interval between calls to the AWS API. (default 30)
 * `filter` A set of ";" separated query filters ("$Name=$Value") for the AWS EC2 API, see below.
