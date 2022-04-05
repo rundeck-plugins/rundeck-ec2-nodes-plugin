@@ -104,7 +104,7 @@ class InstanceToNodeMapper {
             }
         }
 
-        if (getEndpoint() == "ALL_REGIONS") {
+        if (getEndpoint().equals("ALL_REGIONS")) {
 
             //Retrieve dynamic list of EC2 regions from AWS
             DescribeRegionsResult regionsResult = ec2.describeRegions();
