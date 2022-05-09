@@ -96,7 +96,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                     PropertyUtil.string(
                             SECRET_KEY,
                             "Secret Key",
-                            "AWS Secret Key, required if Access Key is used. If not used, then the IAM profile will be used",
+                            "AWS Secret Key. Required if Access Key is used and Secret Key Storage Path is blank.\nIf `Access Key` is not used, then the IAM profile will be used.",
                             false,
                             null,
                             null,
@@ -108,7 +108,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                     PropertyUtil.string(
                             SECRET_KEY_STORAGE_PATH,
                             "Secret Key Storage Path",
-                            "Key Storage Path to AWS Secret Key.",
+                            "Key Storage Path for AWS Secret Key. Required if Access Key is used and Secret Key is blank.\nIf `Access Key` is not used, then the IAM profile will be used.",
                             false,
                             null,
                             null,
