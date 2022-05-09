@@ -30,6 +30,7 @@ import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceFactory;
 import com.dtolabs.rundeck.plugins.util.DescriptionBuilder;
 import com.dtolabs.rundeck.plugins.util.PropertyBuilder;
+import org.rundeck.app.spi.Services;
 
 import java.io.File;
 import java.util.*;
@@ -59,6 +60,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String RUNNING_ONLY = "runningOnly";
     public static final String ACCESS_KEY = "accessKey";
     public static final String SECRET_KEY = "secretKey";
+    public static final String SECRET_KEY_STORAGE_PATH = "secretKeyStoragePath";
     public static final String ROLE_ARN = "assumeRoleArn";
     public static final String MAPPING_FILE = "mappingFile";
     public static final String REFRESH_INTERVAL = "refreshInterval";
@@ -74,10 +76,14 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
         this.framework = framework;
     }
 
-    public ResourceModelSource createResourceModelSource(final Properties properties) throws ConfigurationException {
-        final EC2ResourceModelSource ec2ResourceModelSource = new EC2ResourceModelSource(properties);
+    public ResourceModelSource createResourceModelSource(Services services, final Properties configuration) throws ConfigurationException {
+        final EC2ResourceModelSource ec2ResourceModelSource = new EC2ResourceModelSource(configuration, services);
         ec2ResourceModelSource.validate();
         return ec2ResourceModelSource;
+    }
+
+    public ResourceModelSource createResourceModelSource(Properties configuration) throws ConfigurationException {
+        return null;
     }
 
     static Description DESC = DescriptionBuilder.builder()
@@ -96,6 +102,22 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                    )
+            )
+            .property(
+                    PropertyUtil.string(
+                            SECRET_KEY_STORAGE_PATH,
+                            "Secret Key Storage Path",
+                            "Key Storage Path to AWS Secret Key.",
+                            false,
+                            null,
+                            null,
+                            null,
+                            new HashMap<String, Object>(){{
+                                put(StringRenderingConstants.SELECTION_ACCESSOR_KEY,StringRenderingConstants.SelectionAccessor.STORAGE_PATH);
+                                put(StringRenderingConstants.STORAGE_PATH_ROOT_KEY,"keys");
+                                put(StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY, "Rundeck-data-type=password");
+                            }}
                     )
             )
             .property(
