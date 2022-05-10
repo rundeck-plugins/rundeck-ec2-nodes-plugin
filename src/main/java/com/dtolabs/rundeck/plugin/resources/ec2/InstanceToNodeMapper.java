@@ -104,42 +104,50 @@ class InstanceToNodeMapper {
             }
         }
 
-        if (getEndpoint().equals("ALL_REGIONS")) {
+        if(getEndpoint() != null) {
+            if (getEndpoint().equals("ALL_REGIONS")) {
 
-            //Retrieve dynamic list of EC2 regions from AWS
-            DescribeRegionsResult regionsResult = ec2.describeRegions();
-            for (Region region : regionsResult.getRegions()) {
-                regions.add(region.getEndpoint());
+                //Retrieve dynamic list of EC2 regions from AWS
+                DescribeRegionsResult regionsResult = ec2.describeRegions();
+                for (Region region : regionsResult.getRegions()) {
+                    regions.add(region.getEndpoint());
+                }
+
+            } else {
+                try {
+                    //Use comma-separated list of region supplied by user
+                    regions.addAll(Arrays.asList(getEndpoint().replaceAll("\\s+", "").split(",")));
+                } catch (NullPointerException e) {
+                    throw new IllegalArgumentException("Failed to parse endpoint: Region cannot be empty");
+                }
             }
 
-        } else {
-            try {
-                //Use comma-separated list of region supplied by user
-                regions.addAll(Arrays.asList(getEndpoint().replaceAll("\\s+", "").split(",")));
-            } catch (NullPointerException e) {
-                throw new IllegalArgumentException("Failed to parse endpoint: Region cannot be empty");
+            for (String region : regions) {
+
+                ec2.setEndpoint(region);
+                zones = ec2.describeAvailabilityZones();
+                final ArrayList<Filter> filters = buildFilters();
+
+                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+                if (!newInstances.isEmpty() && newInstances != null) {
+                    instances.addAll(newInstances);
+                }
+
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
-
-        for (String region : regions) {
-
-            ec2.setEndpoint(region);
+        else{
             zones = ec2.describeAvailabilityZones();
+
             final ArrayList<Filter> filters = buildFilters();
 
-            final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
-
-            if (!newInstances.isEmpty() && newInstances !=null) {
-                instances.addAll(newInstances);
-            }
-
-            try {
-                Thread.sleep(100);
-            } catch(InterruptedException ex) {
-                Thread.currentThread().interrupt();
-            }
+            instances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
         }
-
         mapInstances(nodeSet, instances);
         return nodeSet;
     }
