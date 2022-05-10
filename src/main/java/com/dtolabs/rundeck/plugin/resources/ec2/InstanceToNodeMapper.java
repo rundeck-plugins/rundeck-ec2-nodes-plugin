@@ -146,6 +146,8 @@ class InstanceToNodeMapper {
 
             final ArrayList<Filter> filters = buildFilters();
 
+            //use ec2 object without defining endpoint and sdk will assign default
+
             instances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
         }
         mapInstances(nodeSet, instances);
