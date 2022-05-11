@@ -56,7 +56,9 @@ repositories {
 }
 dependencies {
     compile group:"org.slf4j", name:"slf4j-api", version:"1.7.30"
-    compile group: 'org.rundeck', name: 'rundeck-core', version: '3.4.0-20210614'
+    compile (group: 'org.rundeck', name: 'rundeck-core', version: '3.4.0-20210614') {
+        exclude group: "com.google.guava"
+    }
     compile "com.amazonaws:aws-java-sdk-core:1.11.743"
     compile "com.amazonaws:aws-java-sdk-sts:1.11.743"
     compile "com.fasterxml.jackson.core:jackson-databind:2.10.5.1"
