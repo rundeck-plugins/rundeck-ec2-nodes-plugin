@@ -1,6 +1,10 @@
+# IDE/Build files
 .gradle/
 *.ipr
 *.iml
 *.iws
 .idea/
 build/
+
+# System files
+**/.DS_Store

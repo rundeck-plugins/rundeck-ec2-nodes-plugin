@@ -198,8 +198,6 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             KeyStorageTree keyStorage = services.getService(KeyStorageTree.class);
             String secretKey =  getPasswordFromKeyStorage(secretKeyStoragePath, keyStorage);
 
-            System.out.println("SECRET KEY" + secretKey);
-
             credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
             assumeRoleArn = null;
         }else if (null != accessKey && null != secretKey) {
