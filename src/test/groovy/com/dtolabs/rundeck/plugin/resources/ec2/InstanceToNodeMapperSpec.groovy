@@ -160,28 +160,6 @@ class InstanceToNodeMapperSpec extends Specification {
         'instanceId|tags/Name+"_"+tags/env' | null   | 'aninstanceId,bob_PROD'
     }
 
-    private static Instance mkInstance() {
-        Instance i = new Instance()
-        i.withTags(new Tag('Name', 'bob'), new Tag('env', 'PROD'))
-        i.setInstanceId("aninstanceId")
-        i.setArchitecture("anarch")
-        i.setImageId("ami-something")
-        i.setPlacement(new Placement("us-east-1a"))
-
-        def state = new InstanceState()
-        state.setName(InstanceStateName.Running)
-        i.setState(state)
-        i.setPrivateIpAddress('127.0.9.9')
-        return i
-    }
-
-    private static Image mkImage(){
-        Image image = new Image()
-        image.setImageId("ami-something")
-        image.setName("AMISomething")
-        return image
-    }
-
     def "extra mapping image"() {
         given:
 
@@ -222,8 +200,6 @@ class InstanceToNodeMapperSpec extends Specification {
         'imageName' | "ami_image"
         'imageId+"-"+imageName' | "ami_image"
     }
-
-
 
     def "extra mapping not calling image list"() {
         given:
@@ -300,5 +276,30 @@ class InstanceToNodeMapperSpec extends Specification {
         instances.getNode("aninstanceId").getAttributes().containsKey("region")
         instances.getNode("aninstanceId").getAttributes().get("region") == "us-east-1"
 
+    }
+
+    //
+    // Private Methods
+    //
+    private static Instance mkInstance() {
+        Instance i = new Instance()
+        i.withTags(new Tag('Name', 'bob'), new Tag('env', 'PROD'))
+        i.setInstanceId("aninstanceId")
+        i.setArchitecture("anarch")
+        i.setImageId("ami-something")
+        i.setPlacement(new Placement("us-east-1a"))
+
+        def state = new InstanceState()
+        state.setName(InstanceStateName.Running)
+        i.setState(state)
+        i.setPrivateIpAddress('127.0.9.9')
+        return i
+    }
+
+    private static Image mkImage(){
+        Image image = new Image()
+        image.setImageId("ami-something")
+        image.setName("AMISomething")
+        return image
     }
 }

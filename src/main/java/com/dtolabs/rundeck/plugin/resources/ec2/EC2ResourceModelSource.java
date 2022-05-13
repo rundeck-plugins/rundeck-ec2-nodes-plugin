@@ -343,7 +343,10 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             String key = new String(storage.readPassword(path));
             return key;
         }catch (Exception e){
-            throw StorageException.readException(PathUtil.asPath(path), "error accessing key storage: ${e.message}");
+            throw StorageException.readException(
+                    PathUtil.asPath(path),
+                    "error accessing key storage at " + path + ": " + e.getMessage()
+            );
         }
 
     }
