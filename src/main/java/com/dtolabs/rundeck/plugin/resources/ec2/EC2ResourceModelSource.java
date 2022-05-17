@@ -33,6 +33,10 @@ import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
+import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree;
+import org.rundeck.app.spi.Services;
+import org.rundeck.storage.api.PathUtil;
+import org.rundeck.storage.api.StorageException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,6 +66,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     static  Logger logger = LoggerFactory.getLogger(EC2ResourceModelSource.class);
     private String accessKey;
     private String secretKey;
+    private String secretKeyStoragePath;
     long refreshInterval = 30000;
     long lastRefresh = 0;
     String filterParams;
@@ -72,6 +77,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     String httpProxyPass;
     String mappingParams;
     File mappingFile;
+    Services services;
     boolean useDefaultMapping = true;
     boolean runningOnly = false;
     boolean queryAsync = true;
@@ -141,9 +147,10 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
     }
 
-    public EC2ResourceModelSource(final Properties configuration) {
+    public EC2ResourceModelSource(final Properties configuration, final Services services) {
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
+        this.secretKeyStoragePath = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH);
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
         this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
@@ -186,13 +193,19 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                 EC2ResourceModelSourceFactory.RUNNING_ONLY));
             logger.info("[debug] runningOnly:" + runningOnly);
         }
-        if (null != accessKey && null != secretKey) {
+        if (null != accessKey && null != secretKeyStoragePath) {
+
+            KeyStorageTree keyStorage = services.getService(KeyStorageTree.class);
+            String secretKey =  getPasswordFromKeyStorage(secretKeyStoragePath, keyStorage);
+
             credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
             assumeRoleArn = null;
-        }else{
+        }else if (null != accessKey && null != secretKey) {
+            credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
+            assumeRoleArn = null;
+        } else {
             assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
         }
-
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
             clientConfiguration.setProxyHost(httpProxyHost);
             clientConfiguration.setProxyPort(httpProxyPort);
@@ -224,7 +237,6 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                     assumeCredentials.getSessionToken()
             );
         }
-
 
         mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration, pageResults);
         mapper.setFilterParams(params);
@@ -321,8 +333,20 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     }
 
     public void validate() throws ConfigurationException {
-        if (null != accessKey && null == secretKey) {
+        if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
             throw new ConfigurationException("secretKey is required for use with accessKey");
+        }
+    }
+
+    static String getPasswordFromKeyStorage(String path, KeyStorageTree storage) {
+        try{
+            String key = new String(storage.readPassword(path));
+            return key;
+        }catch (Exception e){
+            throw StorageException.readException(
+                    PathUtil.asPath(path),
+                    "error accessing key storage at " + path + ": " + e.getMessage()
+            );
         }
 
     }
