@@ -5,6 +5,7 @@ import com.dtolabs.rundeck.core.common.IRundeckProject
 import com.dtolabs.rundeck.core.common.ProjectManager
 import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree
 import org.rundeck.app.spi.Services
+import org.rundeck.storage.api.StorageException
 import spock.lang.Specification
 
 class EC2ResourceModelSourceSpec extends Specification {
@@ -52,6 +53,29 @@ class EC2ResourceModelSourceSpec extends Specification {
         then: "we see that the proper keys from the key storage or the inline key have been derived"
         workingRmsPass == validSecretKey
         failingRmsPass == badPass
+    }
+    def "fail properly when invalid key path is provided"() {
+        given: "User plugin config that uses an invalid key path"
+        //Define good and bad keys and paths
+        def validAccessKey = "validAccessKey"
+        def goodKeyPath = "keys/validKeyPath"
+        def badPath = "keys/badPath"
+        def badPass = "myNetflixPassword"
+
+        // Mock services and Key Storage return of passwords
+        def serviceWithBadPass = mockServicesWithPassword(badPath, null)
+
+        // Create a default config object (these are the settings the user would setup via the Plugin UI)
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, validAccessKey)
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH, badPath)
+
+        when: "user attempts to create EC2ResourceModelSource instance using invalid path"
+        def failingRms = ec2ResourceModelSource(serviceWithBadPass, config)
+
+        then: "expect a StorageException#readException to be returned"
+        StorageException ex = thrown()
+        ex.message.contains("error accessing key storage at ${badPath}")
     }
     //
     // Private Methods
