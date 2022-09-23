@@ -48,7 +48,7 @@ repositories {
     mavenLocal()
 }
 dependencies {
-    implementation group:"org.slf4j", name:"slf4j-api", version:"1.7.30"
+    implementation "org.slf4j:slf4j-api:1.7.36"
     implementation (group: 'org.rundeck', name: 'rundeck-core', version: '3.4.0-20210614') {
         exclude group: "com.google.guava"
     }
