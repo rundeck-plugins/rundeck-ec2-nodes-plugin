@@ -45,14 +45,7 @@ configurations{
 }
 repositories {
     mavenCentral()
-
-    ivy {
-        url = "file:$projectDir/third-party"
-        name = 'thirdparty'
-        patternLayout {
-            artifact "[module]-[revision]/[module]-[revision](-[classifier]).[ext]"
-        }
-    }
+    mavenLocal()
 }
 dependencies {
     implementation group:"org.slf4j", name:"slf4j-api", version:"1.7.30"
@@ -66,7 +59,6 @@ dependencies {
 
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
     pluginLibs group: 'javax.xml.stream', name: 'stax-api', version: '1.0'
-
 
     pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.743') {
         exclude group: "com.fasterxml.jackson.core"
