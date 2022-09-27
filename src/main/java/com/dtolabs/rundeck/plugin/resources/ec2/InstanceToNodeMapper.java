@@ -25,7 +25,13 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.WebIdentityTokenCredentialsProvider;
+import com.amazonaws.client.builder.AwsClientBuilder;
+import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2Client;
+import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
@@ -92,15 +98,17 @@ class InstanceToNodeMapper {
     public NodeSetImpl performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
-        Set<Instance> instances = new HashSet<Instance>();;
+        Set<Instance> instances = new HashSet<Instance>();
 
         ArrayList<String> regions = new ArrayList<>();
 
+        AmazonEC2ClientBuilder ec2ClientBuilder = AmazonEC2ClientBuilder.standard();
         if(ec2 ==null) {
+            ec2ClientBuilder.withClientConfiguration(clientConfiguration);
             if (null != credentials) {
-                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+                ec2ClientBuilder.withCredentials(new AWSStaticCredentialsProvider(credentials));
             } else {
-                ec2 = new AmazonEC2Client(clientConfiguration);
+                ec2ClientBuilder.withCredentials(WebIdentityTokenCredentialsProvider.create());
             }
         }
 
@@ -108,7 +116,7 @@ class InstanceToNodeMapper {
             if (getEndpoint().equals("ALL_REGIONS")) {
 
                 //Retrieve dynamic list of EC2 regions from AWS
-                DescribeRegionsResult regionsResult = ec2.describeRegions();
+                DescribeRegionsResult regionsResult = ec2ClientBuilder.build().describeRegions();
                 for (Region region : regionsResult.getRegions()) {
                     regions.add(region.getEndpoint());
                 }
@@ -124,11 +132,13 @@ class InstanceToNodeMapper {
 
             for (String region : regions) {
 
-                ec2.setEndpoint(region);
-                zones = ec2.describeAvailabilityZones();
+                ec2ClientBuilder.withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(region,null));
+                AmazonEC2Client ec2Client = (AmazonEC2Client) ec2ClientBuilder.build();
+
+                zones = ec2Client.describeAvailabilityZones();//ec2.describeAvailabilityZones();
                 final ArrayList<Filter> filters = buildFilters();
 
-                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2Client, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
 
                 if (!newInstances.isEmpty() && newInstances != null) {
                     instances.addAll(newInstances);

@@ -27,7 +27,9 @@ import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.auth.BasicSessionCredentials;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
+import com.amazonaws.auth.WebIdentityTokenCredentialsProvider;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
 import com.amazonaws.services.securitytoken.model.*;
 import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
@@ -224,12 +226,12 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
         loadMapping();
         if (this.credentials == null && assumeRoleArn != null) {
-            AWSSecurityTokenServiceClient sts_client = new AWSSecurityTokenServiceClient(clientConfiguration);
-            //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
-            AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
-            assumeRoleRequest.setRoleArn(assumeRoleArn);
-            assumeRoleRequest.setRoleSessionName("RundeckEC2ResourceModelSourceSession");
-            AssumeRoleResult assumeRoleResult = sts_client.assumeRole(assumeRoleRequest);
+            final String roleSessionName = "RundeckEC2ResourceModelSourceSession";
+
+            AWSSecurityTokenService stsBuilder = AWSSecurityTokenServiceClientBuilder.standard().withCredentials(WebIdentityTokenCredentialsProvider.create()).build();
+
+            AssumeRoleResult assumeRoleResult = stsBuilder.assumeRole(new AssumeRoleRequest().withRoleArn(assumeRoleArn).withRoleSessionName(roleSessionName));
+
             Credentials assumeCredentials = assumeRoleResult.getCredentials();
             credentials = new BasicSessionCredentials(
                     assumeCredentials.getAccessKeyId(),
