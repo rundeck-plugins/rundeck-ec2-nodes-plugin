@@ -6,7 +6,7 @@ buildscript {
 }
 
 plugins {
-    id 'pl.allegro.tech.build.axion-release' version '1.9.3'
+    id 'pl.allegro.tech.build.axion-release' version '1.12.4'
 }
 
 apply plugin: 'java'
@@ -39,33 +39,26 @@ configurations{
     pluginLibs
 
     //declare compile to extend from pluginLibs so it inherits the dependencies
-    compile{
+    implementation{
         extendsFrom pluginLibs
     }
 }
 repositories {
     mavenCentral()
-
-    ivy {
-        url = "file:$projectDir/third-party"
-        name = 'thirdparty'
-        layout  'pattern', {
-            artifact "[module]-[revision]/[module]-[revision](-[classifier]).[ext]"
-        }
-    }
+    mavenLocal()
 }
 dependencies {
-    compile group:"org.slf4j", name:"slf4j-api", version:"1.7.30"
-    compile (group: 'org.rundeck', name: 'rundeck-core', version: '3.4.0-20210614') {
+    implementation "org.slf4j:slf4j-api:1.7.36"
+    implementation (group: 'org.rundeck', name: 'rundeck-core', version: '3.4.0-20210614') {
         exclude group: "com.google.guava"
     }
-    compile "com.amazonaws:aws-java-sdk-core:1.11.743"
-    compile "com.amazonaws:aws-java-sdk-sts:1.11.743"
-    compile "com.fasterxml.jackson.core:jackson-databind:2.10.5.1"
-    compile group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
+    implementation "com.amazonaws:aws-java-sdk-core:1.11.743"
+    implementation "com.amazonaws:aws-java-sdk-sts:1.11.743"
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.10.5.1"
+    implementation group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
 
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
-    pluginLibs group: 'stax-api', name: 'stax-api', version: '1.0.1'
+    pluginLibs group: 'javax.xml.stream', name: 'stax-api', version: '1.0'
 
     pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.743') {
         exclude group: "com.fasterxml.jackson.core"
@@ -77,10 +70,10 @@ dependencies {
         exclude group: "com.fasterxml.jackson.dataformat"
     }
 
-    testCompile "org.codehaus.groovy:groovy-all:2.3.7"
-    testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
-    testCompile "cglib:cglib-nodep:2.2.2"
-    testCompile 'org.objenesis:objenesis:3.1'
+    testImplementation "org.codehaus.groovy:groovy-all:2.3.7"
+    testImplementation "org.spockframework:spock-core:0.7-groovy-2.0"
+    testImplementation "cglib:cglib-nodep:2.2.2"
+    testImplementation 'org.objenesis:objenesis:3.1'
 }
 
 // task to copy plugin libs to output/lib dir
