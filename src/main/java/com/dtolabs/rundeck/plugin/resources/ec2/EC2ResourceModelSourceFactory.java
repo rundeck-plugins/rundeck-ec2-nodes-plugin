@@ -86,7 +86,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
         return null;
     }
 
-    static Description DESC = DescriptionBuilder.builder()
+    public static Description DESC = DescriptionBuilder.builder()
             .name(PROVIDER_NAME)
             .title("AWS EC2 Resources")
             .description("Produces nodes from AWS EC2")
