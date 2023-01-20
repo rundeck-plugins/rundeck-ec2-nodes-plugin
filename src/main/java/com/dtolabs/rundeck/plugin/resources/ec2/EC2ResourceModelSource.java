@@ -75,7 +75,6 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     int httpProxyPort = 80;
     String httpProxyUser;
     String httpProxyPass;
-
     String region;
     String mappingParams;
     File mappingFile;

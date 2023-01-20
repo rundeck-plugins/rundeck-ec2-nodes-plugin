@@ -160,6 +160,9 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             "Optionally use `ALL_REGIONS` to automatically pull in instances from all regions that the AWS credentials (or IAM Role) have access to.",
                     false,
                     null))
+            .property(PropertyUtil.string(REGION, "Region", "AWS EC2 region.",
+                    false,
+                    null))
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
             .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
             .property(PropertyUtil.string(HTTP_PROXY_USER, "HTTP Proxy User", "HTTP Proxy User Name, or blank for default", false, null))
