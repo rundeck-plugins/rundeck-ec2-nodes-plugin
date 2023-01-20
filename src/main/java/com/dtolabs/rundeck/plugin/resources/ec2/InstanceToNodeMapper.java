@@ -25,6 +25,8 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
+import com.amazonaws.regions.RegionImpl;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
@@ -54,6 +56,7 @@ class InstanceToNodeMapper {
     private ExecutorService executorService = Executors.newSingleThreadExecutor();
     private ArrayList<String> filterParams;
     private String endpoint;
+    private String region;
     private boolean runningStateOnly = true;
     private Properties mapping;
     private int maxResults;
@@ -140,6 +143,9 @@ class InstanceToNodeMapper {
                     Thread.currentThread().interrupt();
                 }
             }
+        }
+        else if(region != null){
+            ec2.setRegion(com.amazonaws.regions.Region.getRegion(Regions.fromName(region)));
         }
         else{
             zones = ec2.describeAvailabilityZones();
@@ -494,6 +500,10 @@ class InstanceToNodeMapper {
      */
     public void setEndpoint(final String endpoint) {
         this.endpoint = endpoint;
+    }
+
+    public void setRegion(final String region) {
+        this.region = region;
     }
 
     public Properties getMapping() {

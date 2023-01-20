@@ -75,6 +75,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     int httpProxyPort = 80;
     String httpProxyUser;
     String httpProxyPass;
+
+    String region;
     String mappingParams;
     File mappingFile;
     Services services;
@@ -150,6 +152,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     public EC2ResourceModelSource(final Properties configuration, final Services services) {
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
+        this.region = configuration.getProperty(EC2ResourceModelSourceFactory.REGION);
         this.secretKeyStoragePath = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH);
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
         this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
@@ -241,6 +244,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration, pageResults);
         mapper.setFilterParams(params);
         mapper.setEndpoint(endpoint);
+        mapper.setRegion(region);
         mapper.setRunningStateOnly(runningOnly);
     }
 
