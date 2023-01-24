@@ -145,7 +145,7 @@ class InstanceToNodeMapper {
             }
         }
         else if(region != null){
-            ec2.setRegion(com.amazonaws.regions.Region.getRegion(Regions.fromName(region)));
+            ec2.setEndpoint("https://ec2." + region + ".amazonaws.com");
         }
         else{
             zones = ec2.describeAvailabilityZones();
