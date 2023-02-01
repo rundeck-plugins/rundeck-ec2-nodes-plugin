@@ -62,6 +62,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String SECRET_KEY = "secretKey";
     public static final String SECRET_KEY_STORAGE_PATH = "secretKeyStoragePath";
     public static final String ROLE_ARN = "assumeRoleArn";
+    public static final String REGION = "region";
     public static final String MAPPING_FILE = "mappingFile";
     public static final String REFRESH_INTERVAL = "refreshInterval";
     public static final String SYNCHRONOUS_LOAD = "synchronousLoad";
@@ -157,6 +158,9 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             .property(PropertyUtil.string(ENDPOINT, "Endpoint", "AWS EC2 Endpoint to specify region, or blank for default. Include comma-separated list of endpoints to integrate with multiple regions.\n\n" +
                     "Example: `https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com` This would retrieve instances from the `US-WEST-1` and `US-EAST-1` regions.\n" +
                             "Optionally use `ALL_REGIONS` to automatically pull in instances from all regions that the AWS credentials (or IAM Role) have access to.",
+                    false,
+                    null))
+            .property(PropertyUtil.string(REGION, "Region", "AWS EC2 region.",
                     false,
                     null))
             .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
