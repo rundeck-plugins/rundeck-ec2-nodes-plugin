@@ -151,7 +151,7 @@ class InstanceToNodeMapper {
 
             final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
 
-            if (!newInstances.isEmpty() && newInstances != null) {
+            if (newInstances != null && !newInstances.isEmpty()) {
                 instances.addAll(newInstances);
             }
 
