@@ -146,6 +146,20 @@ class InstanceToNodeMapper {
         }
         else if(region != null){
             ec2.setEndpoint("https://ec2." + region + ".amazonaws.com");
+            zones = ec2.describeAvailabilityZones();
+            final ArrayList<Filter> filters = buildFilters();
+
+            final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+            if (!newInstances.isEmpty() && newInstances != null) {
+                instances.addAll(newInstances);
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
         }
         else{
             zones = ec2.describeAvailabilityZones();
