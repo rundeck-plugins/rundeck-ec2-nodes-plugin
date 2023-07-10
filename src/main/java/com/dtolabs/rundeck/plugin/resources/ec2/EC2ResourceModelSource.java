@@ -85,6 +85,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
     final String assumeRoleArn;
+    final String externalId;
     int pageResults;
 
     AWSCredentials credentials;
@@ -156,6 +157,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
         this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
+        this.assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
+        this.externalId = configuration.getProperty(EC2ResourceModelSourceFactory.EXTERNAL_ID);
         int proxyPort = 80;
 
         final String proxyPortStr = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PORT);
@@ -201,12 +204,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             String secretKey =  getPasswordFromKeyStorage(secretKeyStoragePath, keyStorage);
 
             credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
-            assumeRoleArn = null;
         }else if (null != accessKey && null != secretKey) {
             credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
-            assumeRoleArn = null;
-        } else {
-            assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
         }
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
             clientConfiguration.setProxyHost(httpProxyHost);
@@ -230,6 +229,9 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
             AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
             assumeRoleRequest.setRoleArn(assumeRoleArn);
+            if(externalId!=null){
+                assumeRoleRequest.setExternalId(externalId);
+            }
             assumeRoleRequest.setRoleSessionName("RundeckEC2ResourceModelSourceSession");
             AssumeRoleResult assumeRoleResult = sts_client.assumeRole(assumeRoleRequest);
             Credentials assumeCredentials = assumeRoleResult.getCredentials();

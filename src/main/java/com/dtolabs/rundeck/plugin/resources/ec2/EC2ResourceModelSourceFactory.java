@@ -62,6 +62,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String SECRET_KEY = "secretKey";
     public static final String SECRET_KEY_STORAGE_PATH = "secretKeyStoragePath";
     public static final String ROLE_ARN = "assumeRoleArn";
+    public static final String EXTERNAL_ID = "externalId";
     public static final String REGION = "region";
     public static final String MAPPING_FILE = "mappingFile";
     public static final String REFRESH_INTERVAL = "refreshInterval";
