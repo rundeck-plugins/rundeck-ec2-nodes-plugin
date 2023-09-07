@@ -149,10 +149,6 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     }
 
     public EC2ResourceModelSource(final Properties configuration, final Services services) {
-        this(configuration, services, null);
-    }
-
-    public EC2ResourceModelSource(final Properties configuration, final Services services, final AWSCredentialsProvider provider) {
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
         this.region = configuration.getProperty(EC2ResourceModelSourceFactory.REGION);
