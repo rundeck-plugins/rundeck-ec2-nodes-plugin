@@ -23,10 +23,8 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.*;
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.auth.BasicSessionCredentials;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
 import com.amazonaws.services.securitytoken.model.*;
 import com.dtolabs.rundeck.core.common.*;
@@ -42,12 +40,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.FutureTask;
 
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
 
@@ -85,6 +81,9 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
     final String assumeRoleArn;
+    final String assumeRoleArnCombinedWithExtId;
+    AWSCredentialsProvider awsCredentialsProvider;
+
     final String externalId;
     int pageResults;
 
@@ -158,6 +157,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
         this.assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
+        this.assumeRoleArnCombinedWithExtId = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN_COMBINED_WITH_EXT_ID);
         this.externalId = configuration.getProperty(EC2ResourceModelSourceFactory.EXTERNAL_ID);
         int proxyPort = 80;
 
@@ -224,22 +224,20 @@ public class EC2ResourceModelSource implements ResourceModelSource {
             Collections.addAll(params, filterParams.split(";"));
         }
         loadMapping();
-        if (this.credentials == null && assumeRoleArn != null) {
-            AWSSecurityTokenServiceClient sts_client = new AWSSecurityTokenServiceClient(clientConfiguration);
-            //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
-            AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
-            assumeRoleRequest.setRoleArn(assumeRoleArn);
-            if(externalId!=null){
-                assumeRoleRequest.setExternalId(externalId);
+
+        if (this.credentials == null) {
+            if(this.externalId != null && this.assumeRoleArnCombinedWithExtId != null){
+                this.credentials = createAwsCredentials(null, this.assumeRoleArnCombinedWithExtId, this.externalId);
             }
-            assumeRoleRequest.setRoleSessionName("RundeckEC2ResourceModelSourceSession");
-            AssumeRoleResult assumeRoleResult = sts_client.assumeRole(assumeRoleRequest);
-            Credentials assumeCredentials = assumeRoleResult.getCredentials();
-            credentials = new BasicSessionCredentials(
-                    assumeCredentials.getAccessKeyId(),
-                    assumeCredentials.getSecretAccessKey(),
-                    assumeCredentials.getSessionToken()
-            );
+
+            if(assumeRoleArn != null) {
+                AWSCredentialsProvider provider = null;
+                if(this.credentials != null){
+                    provider = new AWSStaticCredentialsProvider(credentials);
+                }
+
+                credentials = createAwsCredentials(provider, assumeRoleArn, null);
+            }
         }
 
         mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration, pageResults);
@@ -249,6 +247,29 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         mapper.setRunningStateOnly(runningOnly);
     }
 
+    private AWSCredentials createAwsCredentials(AWSCredentialsProvider provider, String assumeRoleArn, String externalId) {
+        AWSSecurityTokenServiceClient sts_client;
+
+        if (provider != null) {
+            sts_client = new AWSSecurityTokenServiceClient(provider, clientConfiguration);
+        } else {
+            sts_client = new AWSSecurityTokenServiceClient(clientConfiguration);
+        }
+        //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
+        AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
+        assumeRoleRequest.setRoleArn(assumeRoleArn);
+        if(externalId!=null){
+            assumeRoleRequest.setExternalId(externalId);
+        }
+        assumeRoleRequest.setRoleSessionName("RundeckEC2ResourceModelSourceSession");
+        AssumeRoleResult assumeRoleResult = sts_client.assumeRole(assumeRoleRequest);
+        Credentials assumeCredentials = assumeRoleResult.getCredentials();
+        return new BasicSessionCredentials(
+                assumeCredentials.getAccessKeyId(),
+                assumeCredentials.getSecretAccessKey(),
+                assumeCredentials.getSessionToken()
+        );
+    }
 
     public synchronized INodeSet getNodes() throws ResourceModelSourceException {
         checkFuture();
