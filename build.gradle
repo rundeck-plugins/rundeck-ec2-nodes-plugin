@@ -49,23 +49,23 @@ repositories {
 }
 dependencies {
     implementation "org.slf4j:slf4j-api:1.7.36"
-    implementation (group: 'org.rundeck', name: 'rundeck-core', version: '3.4.0-20210614') {
+    implementation (group: 'org.rundeck', name: 'rundeck-core', version: '3.4.10-20220118') {
         exclude group: "com.google.guava"
     }
-    implementation "com.amazonaws:aws-java-sdk-core:1.11.743"
-    implementation "com.amazonaws:aws-java-sdk-sts:1.11.743"
-    implementation "com.fasterxml.jackson.core:jackson-databind:2.10.5.1"
+    implementation "com.amazonaws:aws-java-sdk-core:${awsSdkVersion}"
+    implementation "com.amazonaws:aws-java-sdk-sts:${awsSdkVersion}"
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.12.7.1"
     implementation group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4'
 
     pluginLibs group: 'stax', name: 'stax', version: '1.2.0'
     pluginLibs group: 'javax.xml.stream', name: 'stax-api', version: '1.0'
 
-    pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: '1.11.743') {
+    pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-ec2', version: "${awsSdkVersion}") {
         exclude group: "com.fasterxml.jackson.core"
         exclude group: "com.fasterxml.jackson.dataformat"
     }
 
-    pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: '1.11.743') {
+    pluginLibs (group: 'com.amazonaws', name: 'aws-java-sdk-sts', version: "${awsSdkVersion}") {
         exclude group: "com.fasterxml.jackson.core"
         exclude group: "com.fasterxml.jackson.dataformat"
     }
