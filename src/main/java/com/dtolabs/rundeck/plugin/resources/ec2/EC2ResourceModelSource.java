@@ -25,7 +25,8 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.auth.*;
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
 import com.amazonaws.services.securitytoken.model.*;
 import com.dtolabs.rundeck.core.common.*;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
@@ -248,14 +249,18 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     }
 
     private AWSCredentials createAwsCredentials(AWSCredentialsProvider provider, String assumeRoleArn, String externalId) {
-        AWSSecurityTokenServiceClient sts_client;
+        AWSSecurityTokenService sts_client;
 
         if (provider != null) {
-            sts_client = new AWSSecurityTokenServiceClient(provider, clientConfiguration);
+            sts_client = AWSSecurityTokenServiceClientBuilder.standard()
+                    .withCredentials(provider)
+                    .withClientConfiguration(clientConfiguration)
+                    .build();
         } else {
-            sts_client = new AWSSecurityTokenServiceClient(clientConfiguration);
+            sts_client = AWSSecurityTokenServiceClientBuilder.standard()
+                    .withClientConfiguration(clientConfiguration)
+                    .build();
         }
-        //        sts_client.setEndpoint("sts-endpoint.amazonaws.com");
         AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
         assumeRoleRequest.setRoleArn(assumeRoleArn);
         if(externalId!=null){
