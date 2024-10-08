@@ -7,7 +7,10 @@ buildscript {
 
 plugins {
     id 'pl.allegro.tech.build.axion-release' version '1.13.4'
+    id 'maven-publish'
 }
+
+group = 'com.github.rundeck-plugins'
 
 apply plugin: 'java'
 apply plugin: 'groovy'
@@ -106,3 +109,12 @@ jar {
 
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'rundeck-ec2-nodes-plugin'
+            from components.java
+        }
+    }
+}
