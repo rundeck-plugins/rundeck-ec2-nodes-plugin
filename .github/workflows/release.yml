@@ -26,21 +26,11 @@ jobs:
         run: VERSION=$(./gradlew currentVersion -q -Prelease.quiet) && echo ::set-output name=VERSION::$VERSION
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1.0.0
+        run: |
+          gh release create \
+            --generate-notes \
+            --title 'Release ${{ steps.get_version.outputs.VERSION }}' \
+            ${{ github.ref_name }} \
+            build/libs/rundeck-ec2-nodes-plugin-${{ steps.get_version.outputs.VERSION }}.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ steps.get_version.outputs.VERSION }}
-          draft: false
-          prerelease: false
-      - name: Upload Release Asset (jar)
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/libs/rundeck-ec2-nodes-plugin-${{ steps.get_version.outputs.VERSION }}.jar
-          asset_name: rundeck-ec2-nodes-plugin-${{ steps.get_version.outputs.VERSION }}.jar
-          asset_content_type: application/octet-stream
