@@ -9,7 +9,7 @@ staxApi = "1.0"
 groovy = "2.3.7"
 spock = "0.7-groovy-2.0"
 cglib = "2.2.2"
-objenesis = "3.1"
+objenesis = "3.4"
 
 [libraries]
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
