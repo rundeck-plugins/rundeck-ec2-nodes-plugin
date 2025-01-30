@@ -100,6 +100,9 @@ jar {
     }
 }
 
+test {
+    useJUnitPlatform()
+}
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
 
