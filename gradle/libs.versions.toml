@@ -1,6 +1,6 @@
 [versions]
 slf4j = "1.7.36"
-rundeckCore = "4.17.6-20240402"
+rundeckCore = "5.8.0-20241205"
 awsSdk = "1.12.780"
 jacksonDatabind = "2.18.2"
 commonsBeanutils = "1.9.4"
