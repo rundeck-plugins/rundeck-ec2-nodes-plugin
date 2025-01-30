@@ -8,7 +8,7 @@ stax = "1.2.0"
 staxApi = "1.0"
 groovy = "2.5.23"
 spock = "0.7-groovy-2.0"
-cglib = "2.2.2"
+cglib = "3.3.0"
 objenesis = "3.4"
 
 [libraries]
