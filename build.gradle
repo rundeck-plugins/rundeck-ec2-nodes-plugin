@@ -16,7 +16,7 @@ apply plugin: 'java'
 apply plugin: 'groovy'
 apply plugin: 'idea'
 apply plugin: 'pl.allegro.tech.build.axion-release'
-sourceCompatibility = 1.8
+sourceCompatibility = 11
 defaultTasks 'clean', 'build'
 ext.rundeckPluginVersion = '1.1'
 scmVersion {
@@ -60,8 +60,6 @@ dependencies {
     implementation libs.jacksonDatabind
     implementation libs.commonsBeanutils
 
-    pluginLibs libs.stax
-    pluginLibs libs.staxApi
     pluginLibs(libs.awsSdkEc2) {
         exclude group: "org.apache.httpcomponents", module: "httpclient"
         exclude group: "com.fasterxml.jackson.core"
