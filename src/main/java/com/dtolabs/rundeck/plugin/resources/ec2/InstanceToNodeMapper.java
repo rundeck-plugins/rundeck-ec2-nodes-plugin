@@ -23,11 +23,11 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.regions.RegionImpl;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.ec2.AmazonEC2Client;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.services.ec2.AmazonEC2;
+import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
@@ -49,14 +49,14 @@ import java.util.stream.Collectors;
 class InstanceToNodeMapper {
     static final Logger         logger = LoggerFactory.getLogger(InstanceToNodeMapper.class);
     final        AWSCredentials credentials;
-    private ClientConfiguration clientConfiguration;
+    private final ClientConfiguration clientConfiguration;
     private ArrayList<String> filterParams;
     private String endpoint;
     private String region;
     private boolean runningStateOnly = true;
     private Properties mapping;
-    private int maxResults;
-    private AmazonEC2Client ec2 ;
+    private final int maxResults;
+    private AmazonEC2 ec2;
     private DescribeAvailabilityZonesResult zones;
 
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
@@ -74,14 +74,12 @@ class InstanceToNodeMapper {
     /**
      * Create with the credentials and mapping definition
      */
-    InstanceToNodeMapper(final AmazonEC2Client ec2, final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
+    InstanceToNodeMapper(final AmazonEC2 ec2, final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
         this.credentials = credentials;
         this.mapping = mapping;
         this.clientConfiguration = clientConfiguration;
         this.maxResults = maxResults;
         this.ec2 = ec2;
-
-
     }
 
     /**
@@ -97,9 +95,9 @@ class InstanceToNodeMapper {
 
         if(ec2 ==null) {
             if (null != credentials) {
-                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+                ec2 = AmazonEC2ClientBuilder.standard().withCredentials(new AWSStaticCredentialsProvider(credentials)).withClientConfiguration(clientConfiguration).build();
             } else {
-                ec2 = new AmazonEC2Client(clientConfiguration);
+                ec2 = AmazonEC2ClientBuilder.standard().withClientConfiguration(clientConfiguration).build();
             }
         }
 
@@ -170,7 +168,7 @@ class InstanceToNodeMapper {
         return nodeSet;
     }
 
-    private Set<Instance> query(final AmazonEC2Client ec2, final DescribeInstancesRequest request) {
+    private Set<Instance> query(final AmazonEC2 ec2, final DescribeInstancesRequest request) {
         //create "running" filter
         final Set<Instance> instances = new HashSet<Instance>();
 
