@@ -15,7 +15,9 @@ apply plugin: 'java'
 apply plugin: 'groovy'
 apply plugin: 'idea'
 apply plugin: 'pl.allegro.tech.build.axion-release'
-sourceCompatibility = 11
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+}
 defaultTasks 'clean', 'build'
 ext.rundeckPluginVersion = '1.1'
 scmVersion {
