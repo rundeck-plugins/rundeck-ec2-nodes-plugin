@@ -23,11 +23,11 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.regions.RegionImpl;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.ec2.AmazonEC2Client;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.services.ec2.AmazonEC2;
+import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
@@ -37,9 +37,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -52,15 +49,14 @@ import java.util.stream.Collectors;
 class InstanceToNodeMapper {
     static final Logger         logger = LoggerFactory.getLogger(InstanceToNodeMapper.class);
     final        AWSCredentials credentials;
-    private ClientConfiguration clientConfiguration;
-    private ExecutorService executorService = Executors.newSingleThreadExecutor();
+    private final ClientConfiguration clientConfiguration;
     private ArrayList<String> filterParams;
     private String endpoint;
     private String region;
     private boolean runningStateOnly = true;
     private Properties mapping;
-    private int maxResults;
-    private AmazonEC2Client ec2 ;
+    private final int maxResults;
+    private AmazonEC2 ec2;
     private DescribeAvailabilityZonesResult zones;
 
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
@@ -78,14 +74,12 @@ class InstanceToNodeMapper {
     /**
      * Create with the credentials and mapping definition
      */
-    InstanceToNodeMapper(final AmazonEC2Client ec2, final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
+    InstanceToNodeMapper(final AmazonEC2 ec2, final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
         this.credentials = credentials;
         this.mapping = mapping;
         this.clientConfiguration = clientConfiguration;
         this.maxResults = maxResults;
         this.ec2 = ec2;
-
-
     }
 
     /**
@@ -95,15 +89,15 @@ class InstanceToNodeMapper {
     public NodeSetImpl performQuery() {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
-        Set<Instance> instances = new HashSet<Instance>();;
+        Set<Instance> instances = new HashSet<>();
 
         ArrayList<String> regions = new ArrayList<>();
 
         if(ec2 ==null) {
             if (null != credentials) {
-                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+                ec2 = AmazonEC2ClientBuilder.standard().withCredentials(new AWSStaticCredentialsProvider(credentials)).withClientConfiguration(clientConfiguration).build();
             } else {
-                ec2 = new AmazonEC2Client(clientConfiguration);
+                ec2 = AmazonEC2ClientBuilder.standard().withClientConfiguration(clientConfiguration).build();
             }
         }
 
@@ -174,9 +168,9 @@ class InstanceToNodeMapper {
         return nodeSet;
     }
 
-    private Set<Instance> query(final AmazonEC2Client ec2, final DescribeInstancesRequest request) {
+    private Set<Instance> query(final AmazonEC2 ec2, final DescribeInstancesRequest request) {
         //create "running" filter
-        final Set<Instance> instances = new HashSet<Instance>();
+        final Set<Instance> instances = new HashSet<>();
 
         String token = null;
         do {
@@ -195,7 +189,7 @@ class InstanceToNodeMapper {
 
     private Set<Instance> examineResult(DescribeInstancesResult describeInstancesRequest) {
         final List<Reservation> reservations = describeInstancesRequest.getReservations();
-        final Set<Instance> instances = new HashSet<Instance>();
+        final Set<Instance> instances = new HashSet<>();
 
         for (final Reservation reservation : reservations) {
             instances.addAll(reservation.getInstances());
@@ -204,7 +198,7 @@ class InstanceToNodeMapper {
     }
 
     private ArrayList<Filter> buildFilters() {
-        final ArrayList<Filter> filters = new ArrayList<Filter>();
+        final ArrayList<Filter> filters = new ArrayList<>();
         if (isRunningStateOnly()) {
             final Filter filter = new Filter("instance-state-name").withValues(InstanceStateName.Running.toString());
             filters.add(filter);
@@ -247,7 +241,7 @@ class InstanceToNodeMapper {
             //iterate through instance tags and generate settings
             for (final Tag tag : inst.getTags()) {
                 if (null == node.getAttributes()) {
-                    node.setAttributes(new HashMap<String, String>());
+                    node.setAttributes(new HashMap<>());
                 }
                 node.getAttributes().put(tag.getKey(), tag.getValue());
             }
@@ -257,23 +251,23 @@ class InstanceToNodeMapper {
             final String value = applySelector(inst, selector, mapping.getProperty("tags.default"), true);
             if (null != value) {
                 final String[] values = value.split(",");
-                final HashSet<String> tagset = new HashSet<String>();
+                final HashSet<String> tagset = new HashSet<>();
                 for (final String s : values) {
                     tagset.add(s.trim());
                 }
                 if (null == node.getTags()) {
                     node.setTags(tagset);
                 } else {
-                    final HashSet orig = new HashSet(node.getTags());
+                    final Set<String> orig = new HashSet<String>(node.getTags());
                     orig.addAll(tagset);
                     node.setTags(orig);
                 }
             }
         }
         if (null == node.getTags()) {
-            node.setTags(new HashSet());
+            node.setTags(new HashSet<String>());
         }
-        final HashSet orig = new HashSet(node.getTags());
+        final Set<String> orig = new HashSet<String>(node.getTags());
         //apply specific tag selectors
         final Pattern tagPat = Pattern.compile("^tag\\.(.+?)\\.selector$");
         //evaluate tag selectors
@@ -286,7 +280,7 @@ class InstanceToNodeMapper {
             if (m.matches()) {
                 final String tagName = m.group(1);
                 if (null == node.getAttributes()) {
-                    node.setAttributes(new HashMap<String, String>());
+                    node.setAttributes(new HashMap<>());
                 }
                 final String value = applySelector(inst, selparts[0], null);
                 if (null != value) {
@@ -311,7 +305,7 @@ class InstanceToNodeMapper {
                 key + ".selector")))) {
                 final String attrName = m.group(1);
                 if (null == node.getAttributes()) {
-                    node.setAttributes(new HashMap<String, String>());
+                    node.setAttributes(new HashMap<>());
                 }
                 if (null != value) {
                     node.getAttributes().put(attrName, value);
@@ -332,7 +326,7 @@ class InstanceToNodeMapper {
                     continue;
                 }
                 if (null == node.getAttributes()) {
-                    node.setAttributes(new HashMap<String, String>());
+                    node.setAttributes(new HashMap<>());
                 }
                 final String value = applySelector(inst, selector, mapping.getProperty(attrName + ".default"));
                 if (null != value) {
@@ -348,17 +342,17 @@ class InstanceToNodeMapper {
 //            return null;
 //        }
         String name = node.getNodename();
-        if (null == name || "".equals(name)) {
+        if (null == name || name.isEmpty()) {
             name = node.getHostname();
         }
-        if (null == name || "".equals(name)) {
+        if (null == name || name.isEmpty()) {
             name = inst.getInstanceId();
         }
         node.setNodename(name);
 
         // Set ssh port on hostname if not 22
         String sshport = node.getAttributes().get("sshport");
-        if (sshport != null && !sshport.equals("") && !sshport.equals("22")) {
+        if (sshport != null && !sshport.isEmpty() && !sshport.equals("22")) {
             node.setHostname(node.getHostname() + ":" + sshport);
         }
 
@@ -441,7 +435,7 @@ class InstanceToNodeMapper {
                 sb.append(matcher.group(2));
             } else {
                 String val = applySingleSelector(inst, selector);
-                if (null != val && !"".equals(val)) {
+                if (null != val && !val.isEmpty()) {
                     hasVal = true;
                     sb.append(val);
                 }
@@ -452,7 +446,7 @@ class InstanceToNodeMapper {
     }
     static String applySingleSelector(final Instance inst, final String selector) throws
         GeneratorException {
-        if (null != selector && !"".equals(selector) && selector.startsWith("tags/")) {
+        if (null != selector && selector.startsWith("tags/")) {
             final String tag = selector.substring("tags/".length());
             final List<Tag> tags = inst.getTags();
             for (final Tag tag1 : tags) {
@@ -460,7 +454,7 @@ class InstanceToNodeMapper {
                     return tag1.getValue();
                 }
             }
-        } else if (null != selector && !"".equals(selector)) {
+        } else if (null != selector && !selector.isEmpty()) {
             try {
                 final String value = BeanUtils.getProperty(inst, selector);
                 if (null != value) {
@@ -546,7 +540,7 @@ class InstanceToNodeMapper {
     }
 
     public Set<Instance> addExtraMappingAttribute(Set<Instance> instances){
-        for(String extraAttribute: Arrays.asList(extraInstanceMappingAttributes)){
+        for(String extraAttribute: extraInstanceMappingAttributes){
             if(mappingHasExtraAttribute(extraAttribute)){
                 if(extraAttribute.equals("imageName")){
                     instances = addingImageName(instances);
@@ -576,7 +570,7 @@ class InstanceToNodeMapper {
         Set<Instance> instances = new HashSet<>();
         Map<String,Image> ec2Images = new HashMap<>();
         List<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toList());
-        logger.debug("Image list: " + imagesList.toString());
+        logger.debug("Image list: {}", imagesList);
         try{
             DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
             describeImagesRequest.setImageIds(imagesList);
@@ -587,7 +581,7 @@ class InstanceToNodeMapper {
                 ec2Images.put(image.getImageId(),image);
             }
         }catch(Exception e){
-            logger.error("error getting image info" +  e.getMessage());
+            logger.error("error getting image info{}", e.getMessage());
         }
 
         for (final Instance inst : originalInstances) {
