@@ -49,15 +49,18 @@ import java.util.concurrent.Future;
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
 
 /**
+ * <p>
  * EC2ResourceModelSource produces nodes by querying the AWS EC2 API to list instances.
- * <p/>
+ * </p>
+ * <p>
  * The RunDeck node definitions are created from the instances on a mapping system to convert properties of the amazon
  * instances to attributes defined on the nodes.
- * <p/>
+ * </p>
+ * <p>
  * The EC2 requests are performed asynchronously, so the first request to {@link #getNodes()} will return null, and
  * subsequent requests may return the data when it's available.
- *
- * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
+ * </p>
+ * @author Greg Schueler <a href="mailto:greg@rundeck.com">greg@rundeck.com</a>
  */
 public class EC2ResourceModelSource implements ResourceModelSource {
     static  Logger logger = LoggerFactory.getLogger(EC2ResourceModelSource.class);

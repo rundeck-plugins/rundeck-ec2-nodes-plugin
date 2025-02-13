@@ -35,18 +35,21 @@ import java.io.File;
 import java.util.*;
 
 /**
- * EC2ResourceModelSourceFactory is the factory that can create a {@link ResourceModelSource} based on a configuration.
- * <p/>
- * The configuration properties are: <ul> <li>endpoint: the AWS endpoint to use, or blank for the default (us-east-1)</li>
- * <li>filter: A set of ";" separated query filters ("filter=value") for the AWS EC2 API, see <a
- * href="http://docs.amazonwebservices.com/AWSEC2/latest/APIReference/ApiReference-query-DescribeInstances.html">DescribeInstances</a></li>
- * <li>mappingParams: A set of ";" separated mapping entries</li> <li>runningOnly: if "true", automatically filter the
- * instances by "instance-state-name=running"</li> <li>accessKey: API AccessKey value</li> <li>secretKey: API SecretKey
- * value</li> <li>mappingFile: Path to a java properties-formatted mapping definition file.</li> <li>refreshInterval:
- * Time in seconds used as minimum interval between calls to the AWS API.</li> <li>useDefaultMapping: if "true", base
- * all mapping definitions off the default mapping provided. </li> </ul>
- *
- * @author Greg Schueler <a href="mailto:greg@dtosolutions.com">greg@dtosolutions.com</a>
+ * <p>EC2ResourceModelSourceFactory is the factory that can create a {@link ResourceModelSource} based on a configuration.</p>
+ * <p>The configuration properties are:</p>
+ * <ul>
+ *   <li>endpoint: the AWS endpoint to use, or blank for the default (us-east-1)</li>
+ *   <li>filter: A set of ";" separated query filters ("filter=value") for the AWS EC2 API, see
+ *       <a href="http://docs.amazonwebservices.com/AWSEC2/latest/APIReference/ApiReference-query-DescribeInstances.html">DescribeInstances</a></li>
+ *   <li>mappingParams: A set of ";" separated mapping entries</li>
+ *   <li>runningOnly: if "true", automatically filter the instances by "instance-state-name=running"</li>
+ *   <li>accessKey: API AccessKey value</li>
+ *   <li>secretKey: API SecretKey value</li>
+ *   <li>mappingFile: Path to a java properties-formatted mapping definition file.</li>
+ *   <li>refreshInterval: Time in seconds used as minimum interval between calls to the AWS API.</li>
+ *   <li>useDefaultMapping: if "true", base all mapping definitions off the default mapping provided.</li>
+ * </ul>
+ * @author Greg Schueler <a href="mailto:greg@rundeck.com">greg@rundeck.com</a>
  */
 @Plugin(name = "aws-ec2", service = "ResourceModelSource")
 public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory, Describable {
