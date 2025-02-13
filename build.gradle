@@ -5,16 +5,21 @@ buildscript {
 }
 
 plugins {
-    id 'pl.allegro.tech.build.axion-release' version '1.18.16'
-    id 'maven-publish'
+    id 'java'
+    id 'groovy'
+    id 'idea'
+    alias(libs.plugins.axionRelease)
+    alias(libs.plugins.nexusPublish)
 }
 
-group = 'com.github.rundeck-plugins'
+group = 'org.rundeck.plugins'
+ext.publishName = "EC2 Nodes Plugin ${project.version}"
+ext.publishDescription = project.description ?: 'Produces Rundeck Nodes from AWS EC2'
+ext.githubSlug = 'rundeck-plugins/rundeck-ec2-nodes-plugin'
+ext.developers = [
+        [id: 'gschueler', name: 'Greg Schueler', email: 'greg@rundeck.com']
+]
 
-apply plugin: 'java'
-apply plugin: 'groovy'
-apply plugin: 'idea'
-apply plugin: 'pl.allegro.tech.build.axion-release'
 java {
     sourceCompatibility = JavaVersion.VERSION_11
 }
@@ -105,11 +110,11 @@ test {
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
 
-publishing {
-    publications {
-        maven(MavenPublication) {
-            artifactId = 'rundeck-ec2-nodes-plugin'
-            from components.java
-        }
+nexusPublishing {
+    packageGroup = 'org.rundeck.plugins'
+    repositories {
+        sonatype()
     }
 }
+
+apply from: "${rootDir}/gradle/publishing.gradle"

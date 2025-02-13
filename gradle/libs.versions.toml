@@ -1,13 +1,15 @@
 [versions]
-slf4j = "1.7.36"
-rundeckCore = "5.8.0-20241205"
+axionRelease = "1.18.16"
 awsSdk = "1.12.780"
-jacksonDatabind = "2.18.2"
+cglib = "3.3.0"
 commonsBeanutils = "1.10.1"
 groovy = "3.0.23"
-spock = "2.3-groovy-3.0"
-cglib = "3.3.0"
+jacksonDatabind = "2.18.2"
+nexusPublish = "2.0.0"
 objenesis = "3.4"
+rundeckCore = "5.8.0-20241205"
+slf4j = "1.7.36"
+spock = "2.3-groovy-3.0"
 
 [libraries]
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
@@ -25,3 +27,7 @@ objenesis = { group = "org.objenesis", name = "objenesis", version.ref = "objene
 [bundles]
 awsSdk = ["awsSdkCore", "awsSdkSts"]
 testLibs = ["groovyAll", "spockCore", "cglibNodep", "objenesis"]
+
+[plugins]
+axionRelease = { id = "pl.allegro.tech.build.axion-release", version.ref = "axionRelease" }
+nexusPublish = { id = "io.github.gradle-nexus.publish-plugin", version.ref = "nexusPublish" }
