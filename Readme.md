@@ -1,18 +1,14 @@
 Rundeck EC2 Nodes Plugin
 ========================
 
-Version: 1.5
 
-[![Build Status](https://travis-ci.org/rundeck-plugins/rundeck-ec2-nodes-plugin.svg?branch=master)](https://travis-ci.org/rundeck-plugins/rundeck-ec2-nodes-plugin)
+![Build Status](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/actions/workflows/gradle.yml/badge.svg)
 
-This is a Resource Model Source plugin for [RunDeck][] 1.5+ that provides
-Amazon EC2 Instances as nodes for the RunDeck server.
+This is a Resource Model Source plugin for [Rundeck][] that provides
+Amazon EC2 Instances as nodes for the Rundeck server.
 
-[RunDeck]: http://rundeck.org
+[Rundeck]: http://rundeck.org
 
-NOTE: For Rundeck 1.4, you will need to use plugin [version 1.2][].
-
-[version 1.2]: https://github.com/gschueler/rundeck-ec2-nodes-plugin/tree/v1.2
 
 Installation
 ------------
@@ -24,16 +20,14 @@ Put the `rundeck-ec2-nodes-plugin-1.5.x.jar` into your `$RDECK_BASE/libext` dir.
 Release Notes
 -------------
 
-[Release Notes](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/blob/master/Release-Notes.md)
+See changes under Github [Releases](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/releases)
+
+([Older Release Notes](https://github.com/rundeck-plugins/rundeck-ec2-nodes-plugin/blob/main/Release-Notes.md))
 
 Usage
 -----
 
-You can configure the Resource Model Sources for a project either via the
-RunDeck GUI, under the "Admin" page, or you can modify the `project.properties`
-file to configure the sources.
-
-See: [Resource Model Source Configuration](http://rundeck.org/1.5/manual/plugins.html#resource-model-source-configuration)
+See: [Rundeck Docs > User Guide > Node Sources Overview](https://docs.rundeck.com/docs/manual/projects/resource-model-sources/)
 
 The provider name is: `aws-ec2`
 
@@ -88,7 +82,7 @@ Example including two instance types, the results will have one or the other ins
 Mapping Definition
 ----------
 
-RunDeck Node attributes are configured by mapping EC2 Instance properties via a
+Rundeck Node attributes are configured by mapping EC2 Instance properties via a
 mapping configuration.
 
 The mapping declares the node attributes that will be set, and what their values
@@ -188,7 +182,7 @@ an instance to contain this list of tags, in this example from the simplemapping
 So creating the "Rundeck-Tags" Tag on the EC2 Instance with a value of "alpha, beta" will result in the node having
 those two node tags.
 
-The tags.selector also supports a "merge" ability, so you can merge multiple Instance Tags into the RunDeck tags by separating multiple selectors with a "|" character:
+The tags.selector also supports a "merge" ability, so you can merge multiple Instance Tags into the Rundeck tags by separating multiple selectors with a "|" character:
 
     tags.selector=tags/Environment|tags/Role
 
