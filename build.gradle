@@ -22,6 +22,8 @@ ext.developers = [
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11
+    withJavadocJar()
+    withSourcesJar()
 }
 allprojects {
     gradle.projectsEvaluated {
