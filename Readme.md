@@ -297,3 +297,41 @@ The default mapping also configures a default `username` attribute to be `ec2-us
 
 `Mapping Params: ssh-keypath.default=/path/to/key;username.default=my-username`
 
+
+# How to
+
+## Build
+
+Build the project with Gradle
+
+    ./gradlew build
+
+## Test
+
+Test the project with Gradle
+
+    ./gradlew check
+
+## Release
+
+Release the project.
+
+    ./gradlew release
+
+## Version
+
+Get current version from axion-release plugin
+
+    ./gradlew currentVersion
+
+## increment minor version
+
+Bump minor version
+
+    ./gradlew markNextVersion -Prelease.incrementer=incrementMinor
+
+## increment major version
+
+Bump major version
+
+    ./gradlew markNextVersion -Prelease.incrementer=incrementMajor
