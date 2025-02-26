@@ -25,9 +25,8 @@ package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
+import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
@@ -95,9 +94,9 @@ class InstanceToNodeMapper {
 
         if(ec2 ==null) {
             if (null != credentials) {
-                ec2 = AmazonEC2ClientBuilder.standard().withCredentials(new AWSStaticCredentialsProvider(credentials)).withClientConfiguration(clientConfiguration).build();
+                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
             } else {
-                ec2 = AmazonEC2ClientBuilder.standard().withClientConfiguration(clientConfiguration).build();
+                ec2 = new AmazonEC2Client(clientConfiguration);
             }
         }
 
