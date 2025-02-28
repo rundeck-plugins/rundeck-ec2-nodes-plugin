@@ -23,12 +23,16 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.auth.*;
 import com.amazonaws.ClientConfiguration;
+import com.amazonaws.auth.*;
+import com.amazonaws.regions.RegionUtils;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
-import com.amazonaws.services.securitytoken.model.*;
-import com.dtolabs.rundeck.core.common.*;
+import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
+import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
+import com.amazonaws.services.securitytoken.model.Credentials;
+import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
@@ -40,7 +44,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -91,8 +97,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     final String externalId;
     int pageResults;
 
-    AWSCredentials credentials;
-    ClientConfiguration clientConfiguration = new ClientConfiguration();;
+    ClientConfiguration clientConfiguration = new ClientConfiguration();
 
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
@@ -153,6 +158,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     }
 
     public EC2ResourceModelSource(final Properties configuration, final Services services) {
+        this.services = services;
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
         this.region = configuration.getProperty(EC2ResourceModelSourceFactory.REGION);
@@ -202,53 +208,64 @@ public class EC2ResourceModelSource implements ResourceModelSource {
                 EC2ResourceModelSourceFactory.RUNNING_ONLY));
             logger.info("[debug] runningOnly:" + runningOnly);
         }
-        if (null != accessKey && null != secretKeyStoragePath) {
 
-            KeyStorageTree keyStorage = services.getService(KeyStorageTree.class);
-            String secretKey =  getPasswordFromKeyStorage(secretKeyStoragePath, keyStorage);
 
-            credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
-        }else if (null != accessKey && null != secretKey) {
-            credentials = new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
-        }
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
-            clientConfiguration.setProxyHost(httpProxyHost);
-            clientConfiguration.setProxyPort(httpProxyPort);
-            clientConfiguration.setProxyUsername(httpProxyUser);
-            clientConfiguration.setProxyPassword(httpProxyPass);
+            this.clientConfiguration.setProxyHost(httpProxyHost);
+            this.clientConfiguration.setProxyPort(httpProxyPort);
+            this.clientConfiguration.setProxyUsername(httpProxyUser);
+            this.clientConfiguration.setProxyPassword(httpProxyPass);
         }
+
         queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
 
-        initialize();
-    }
-
-    private void initialize() {
         final ArrayList<String> params = new ArrayList<String>();
         if (null != filterParams) {
             Collections.addAll(params, filterParams.split(";"));
         }
         loadMapping();
 
-        if (this.credentials == null) {
-            if(this.externalId != null && this.assumeRoleArnCombinedWithExtId != null){
-                this.credentials = createAwsCredentials(null, this.assumeRoleArnCombinedWithExtId, this.externalId);
-            }
-
-            if(assumeRoleArn != null) {
-                AWSCredentialsProvider provider = null;
-                if(this.credentials != null){
-                    provider = new AWSStaticCredentialsProvider(credentials);
-                }
-
-                credentials = createAwsCredentials(provider, assumeRoleArn, null);
-            }
-        }
-
-        mapper = new InstanceToNodeMapper(this.credentials, mapping, clientConfiguration, pageResults);
+        mapper = new InstanceToNodeMapper(createEc2Supplier(), mapping, pageResults);
         mapper.setFilterParams(params);
         mapper.setEndpoint(endpoint);
         mapper.setRegion(region);
         mapper.setRunningStateOnly(runningOnly);
+    }
+
+
+    protected AWSCredentials createCredentials() {
+        if (null != accessKey && null != secretKeyStoragePath) {
+            KeyStorageTree keyStorage = services.getService(KeyStorageTree.class);
+            String secretKey = getPasswordFromKeyStorage(secretKeyStoragePath, keyStorage);
+            return new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
+        } else if (null != accessKey && null != secretKey) {
+            return new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
+        }
+
+        AWSCredentials credentials = null;
+        if (this.externalId != null && this.assumeRoleArnCombinedWithExtId != null) {
+            credentials = createAwsCredentials(null, this.assumeRoleArnCombinedWithExtId, this.externalId);
+        }
+
+        if (assumeRoleArn != null) {
+            AWSCredentialsProvider provider = null;
+            if (credentials != null) {
+                provider = new AWSStaticCredentialsProvider(credentials);
+            }
+
+            return createAwsCredentials(provider, assumeRoleArn, null);
+        }
+        return credentials;
+    }
+
+
+    private EC2SupplierImpl createEc2Supplier() {
+        return new EC2SupplierImpl(
+                createCredentials(),
+                clientConfiguration,
+                // Use old default us-east-1 for AWS EC2, to maintain default behavior for existing configurations
+                RegionUtils.getRegion(Regions.US_EAST_1.getName())
+        );
     }
 
     private AWSCredentials createAwsCredentials(AWSCredentialsProvider provider, String assumeRoleArn, String externalId) {

@@ -23,10 +23,7 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
@@ -47,15 +44,13 @@ import java.util.stream.Collectors;
  */
 class InstanceToNodeMapper {
     static final Logger         logger = LoggerFactory.getLogger(InstanceToNodeMapper.class);
-    final        AWSCredentials credentials;
-    private final ClientConfiguration clientConfiguration;
     private ArrayList<String> filterParams;
     private String endpoint;
     private String region;
     private boolean runningStateOnly = true;
     private Properties mapping;
     private final int maxResults;
-    private AmazonEC2 ec2;
+    private final EC2Supplier ec2Supplier;
     private DescribeAvailabilityZonesResult zones;
 
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
@@ -63,23 +58,12 @@ class InstanceToNodeMapper {
     /**
      * Create with the credentials and mapping definition
      */
-    InstanceToNodeMapper(final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
-        this.credentials = credentials;
+    InstanceToNodeMapper(final EC2Supplier ec2Supplier, final Properties mapping, final int maxResults) {
+        this.ec2Supplier = ec2Supplier;
         this.mapping = mapping;
-        this.clientConfiguration = clientConfiguration;
         this.maxResults = maxResults;
     }
 
-    /**
-     * Create with the credentials and mapping definition
-     */
-    InstanceToNodeMapper(final AmazonEC2 ec2, final AWSCredentials credentials,final Properties mapping, final ClientConfiguration clientConfiguration, final int maxResults) {
-        this.credentials = credentials;
-        this.mapping = mapping;
-        this.clientConfiguration = clientConfiguration;
-        this.maxResults = maxResults;
-        this.ec2 = ec2;
-    }
 
     /**
      * Perform the query and return the set of instances
@@ -90,43 +74,16 @@ class InstanceToNodeMapper {
 
         Set<Instance> instances = new HashSet<>();
 
-        ArrayList<String> regions = new ArrayList<>();
-
-        if(ec2 ==null) {
-            if (null != credentials) {
-                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
-            } else {
-                ec2 = new AmazonEC2Client(clientConfiguration);
-            }
-        }
+        DescribeInstancesRequest request = new DescribeInstancesRequest().withFilters(buildFilters()).withMaxResults(maxResults);
 
         if(getEndpoint() != null) {
-            if (getEndpoint().equals("ALL_REGIONS")) {
-
-                //Retrieve dynamic list of EC2 regions from AWS
-                DescribeRegionsResult regionsResult = ec2.describeRegions();
-                for (Region region : regionsResult.getRegions()) {
-                    regions.add(region.getEndpoint());
-                }
-
-            } else {
-                try {
-                    //Use comma-separated list of region supplied by user
-                    regions.addAll(Arrays.asList(getEndpoint().replaceAll("\\s+", "").split(",")));
-                } catch (NullPointerException e) {
-                    throw new IllegalArgumentException("Failed to parse endpoint: Region cannot be empty");
-                }
-            }
-
-            for (String region : regions) {
-
-                ec2.setEndpoint(region);
+            for (String endpoint : determineEndpoints()) {
+                AmazonEC2 ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
                 zones = ec2.describeAvailabilityZones();
-                final ArrayList<Filter> filters = buildFilters();
 
-                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+                final Set<Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request));
 
-                if (!newInstances.isEmpty() && newInstances != null) {
+                if (newInstances != null && !newInstances.isEmpty()) {
                     instances.addAll(newInstances);
                 }
 
@@ -138,33 +95,46 @@ class InstanceToNodeMapper {
             }
         }
         else if(region != null){
-            ec2.setEndpoint("https://ec2." + region + ".amazonaws.com");
-            zones = ec2.describeAvailabilityZones();
-            final ArrayList<Filter> filters = buildFilters();
+            AmazonEC2 ec2ForRegion = ec2Supplier.getEC2ForRegion(region);
 
-            final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+            zones = ec2ForRegion.describeAvailabilityZones();
+
+            final Set<Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request));
 
             if (newInstances != null && !newInstances.isEmpty()) {
                 instances.addAll(newInstances);
             }
-
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-            }
         }
         else{
+            AmazonEC2 ec2 = ec2Supplier.getEC2ForDefaultRegion();
             zones = ec2.describeAvailabilityZones();
 
-            final ArrayList<Filter> filters = buildFilters();
-
-            //use ec2 object without defining endpoint and sdk will assign default
-
-            instances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+            instances = addExtraMappingAttribute(ec2,query(ec2, request));
         }
         mapInstances(nodeSet, instances);
         return nodeSet;
+    }
+
+    private List<String> determineEndpoints() {
+        ArrayList<String> endpoints = new ArrayList<>();
+        if (getEndpoint().equals("ALL_REGIONS")) {
+
+            //Retrieve dynamic list of EC2 regions from AWS
+            DescribeRegionsResult regionsResult = ec2Supplier.getEC2ForDefaultRegion().describeRegions();
+            for (Region region : regionsResult.getRegions()) {
+                endpoints.add(region.getEndpoint());
+            }
+
+        } else {
+            try {
+                //Use comma-separated list of region supplied by user
+                endpoints.addAll(Arrays.asList(getEndpoint().replaceAll("\\s+", "").split(",")));
+            } catch (NullPointerException e) {
+                throw new IllegalArgumentException("Failed to parse endpoint: Region cannot be empty");
+            }
+        }
+        return endpoints;
     }
 
     private Set<Instance> query(final AmazonEC2 ec2, final DescribeInstancesRequest request) {
@@ -538,11 +508,11 @@ class InstanceToNodeMapper {
         }
     }
 
-    public Set<Instance> addExtraMappingAttribute(Set<Instance> instances){
+    public Set<Instance> addExtraMappingAttribute(AmazonEC2 ec2, Set<Instance> instances) {
         for(String extraAttribute: extraInstanceMappingAttributes){
             if(mappingHasExtraAttribute(extraAttribute)){
                 if(extraAttribute.equals("imageName")){
-                    instances = addingImageName(instances);
+                    instances = addingImageName(ec2, instances);
                 }
                 if(extraAttribute.equals("region")){
                     instances = addingRegion(instances);
@@ -565,10 +535,10 @@ class InstanceToNodeMapper {
         return false;
     }
 
-    public Set<Instance> addingImageName(Set<Instance> originalInstances){
+    public Set<Instance> addingImageName(AmazonEC2 ec2, Set<Instance> originalInstances) {
         Set<Instance> instances = new HashSet<>();
         Map<String,Image> ec2Images = new HashMap<>();
-        List<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toList());
+        Set<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toSet());
         logger.debug("Image list: {}", imagesList);
         try{
             DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
