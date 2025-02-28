@@ -203,13 +203,11 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             "separated by \";\"",
                     false, null))
             .property(PropertyUtil.string(MAPPING_FILE, "Mapping File", "Property mapping File", false, null,
-                    new PropertyValidator() {
-                        public boolean isValid(final String s) throws ValidationException {
-                            if (!new File(s).isFile()) {
-                                throw new ValidationException("File does not exist: " + s);
-                            }
-                            return true;
+                    s -> {
+                        if (!new File(s).isFile()) {
+                            throw new ValidationException("File does not exist: " + s);
                         }
+                        return true;
                     }))
             .property(PropertyUtil.bool(USE_DEFAULT_MAPPING, "Use Default Mapping",
                     "Start with default mapping definition. (Defaults will automatically be used if no others are " +
