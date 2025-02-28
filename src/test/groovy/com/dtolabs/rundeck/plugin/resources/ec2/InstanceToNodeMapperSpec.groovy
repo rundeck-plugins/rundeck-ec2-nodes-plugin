@@ -1,18 +1,18 @@
 package com.dtolabs.rundeck.plugin.resources.ec2
 
-import com.amazonaws.ClientConfiguration
-import com.amazonaws.auth.AWSCredentials
+
 import com.amazonaws.services.ec2.AmazonEC2Client
 import com.amazonaws.services.ec2.model.AvailabilityZone
 import com.amazonaws.services.ec2.model.DescribeAvailabilityZonesResult
-import com.amazonaws.services.ec2.model.DescribeImagesRequest
 import com.amazonaws.services.ec2.model.DescribeImagesResult
 import com.amazonaws.services.ec2.model.DescribeInstancesResult
+import com.amazonaws.services.ec2.model.DescribeRegionsResult
 import com.amazonaws.services.ec2.model.Image
 import com.amazonaws.services.ec2.model.Instance
 import com.amazonaws.services.ec2.model.InstanceState
 import com.amazonaws.services.ec2.model.InstanceStateName
 import com.amazonaws.services.ec2.model.Placement
+import com.amazonaws.services.ec2.model.Region
 import com.amazonaws.services.ec2.model.Reservation
 import com.amazonaws.services.ec2.model.Tag
 import spock.lang.Specification
@@ -179,15 +179,18 @@ class InstanceToNodeMapperSpec extends Specification {
                 getAvailabilityZones()>>[]
             }
         }
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            0 * getEC2ForDefaultRegion()
+            1 * getEC2ForRegion(_) >> ec2
+            0 * getEC2ForEndpoint(_)
+        }
 
-        AWSCredentials credentials = Mock(AWSCredentials)
-        ClientConfiguration clientConfiguration = Mock(ClientConfiguration)
 
         int pageResults = 100
         Properties mapping = new Properties()
         mapping.put("ami_image.selector",mapperValue)
-        def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
-        mapper.setEndpoint("us-west-1")
+        def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
+        mapper.setRegion("us-west-1")
 
         when:
         def instances = mapper.performQuery()
@@ -220,15 +223,16 @@ class InstanceToNodeMapperSpec extends Specification {
                 getAvailabilityZones()>>[]
             }
         }
-
-        AWSCredentials credentials = Mock(AWSCredentials)
-        ClientConfiguration clientConfiguration = Mock(ClientConfiguration)
-
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            0 * getEC2ForDefaultRegion()
+            1 * getEC2ForRegion(_) >> ec2
+            0 * getEC2ForEndpoint(_)
+        }
         int pageResults = 100
         Properties mapping = new Properties()
         mapping.put("nodename.selector","instanceId")
-        def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
-        mapper.setEndpoint("us-west-1")
+        def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
+        mapper.setRegion("us-west-1")
         when:
         def instances = mapper.performQuery()
         then:
@@ -236,14 +240,14 @@ class InstanceToNodeMapperSpec extends Specification {
         0*ec2.describeImages(_)
     }
 
-    def "adding region to the node attributes"() {
+    def "region added to the node attributes with region specified"() {
         given:
 
         Instance instance = mkInstance()
         Image image = mkImage()
         List<AvailabilityZone> zones = new ArrayList<>()
         AvailabilityZone zone1 = new AvailabilityZone()
-        zone1.setRegionName("us-east-1")
+        zone1.setRegionName(region)
         zone1.setZoneName("us-east-1a")
 
         Reservation reservertion = Mock(Reservation){
@@ -261,33 +265,147 @@ class InstanceToNodeMapperSpec extends Specification {
             }
         }
 
-        AWSCredentials credentials = Mock(AWSCredentials)
-        ClientConfiguration clientConfiguration = Mock(ClientConfiguration)
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            0 * getEC2ForDefaultRegion()
+            1 * getEC2ForRegion(region) >> ec2
+            0 * getEC2ForEndpoint(_)
+        }
 
         int pageResults = 100
         Properties mapping = new Properties()
         mapping.put("region.selector","region")
-        def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
-        mapper.setEndpoint("us-east-1")
+        def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
+        mapper.setRegion(region)
         when:
         def instances = mapper.performQuery()
         then:
         instances!=null
         instances.getNode("aninstanceId").getAttributes().containsKey("region")
-        instances.getNode("aninstanceId").getAttributes().get("region") == "us-east-1"
+        instances.getNode("aninstanceId").getAttributes().get("region") == region
+
+        where:
+        region << ['us-east-1','us-west-2']
+    }
+
+    def "region added to the node attributes with endpoint(s) specified"() {
+        given:
+
+        Image image = mkImage()
+
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            0 * getEC2ForDefaultRegion()
+            0 * getEC2ForRegion()
+
+            _ * getEC2ForEndpoint({ it in endpoints }) >> { args ->
+                AvailabilityZone zone1 = new AvailabilityZone()
+                def region=regions[endpoints.indexOf(args[0])]
+                zone1.setRegionName(region)
+                zone1.setZoneName("${region}a")
+                Mock(AmazonEC2Client) {
+                    describeInstances(_) >> Mock(DescribeInstancesResult) {
+                        getReservations() >> [Mock(Reservation){
+                            getInstances()>>[mkInstance(region)]
+                        }]
+                    }
+                    describeImages(_) >> Mock(DescribeImagesResult) {
+                        getImages() >> [image]
+                    }
+                    describeAvailabilityZones() >> Mock(DescribeAvailabilityZonesResult) {
+                        getAvailabilityZones() >> [zone1]
+                    }
+                }
+            }
+
+            0 * _(*_)
+        }
+
+        int pageResults = 100
+        Properties mapping = new Properties()
+        mapping.put("region.selector","region")
+        def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
+        mapper.setEndpoint(endpoints.join(', '))
+        when:
+        def instances = mapper.performQuery()
+        then:
+        instances!=null
+        instances.getNode("aninstanceId").getAttributes().containsKey("region")
+        instances.getNode("aninstanceId").getAttributes().get("region") in regions
+
+        where:
+        endpoints | regions
+        ['https://ec2.us-east-1.amazonaws.com'] | ['us-east-1']
+        ['https://ec2.us-west-2.amazonaws.com'] | ['us-west-2']
+        ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com'] | ['us-west-1','us-east-1']
+    }
+    def "region added to the node attributes with ALL_REGIONS specified"() {
+        given:
+
+        Image image = mkImage()
+
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            1 * getEC2ForDefaultRegion() >> Mock(AmazonEC2Client) {
+                1 * describeRegions() >> Mock(DescribeRegionsResult) {
+                    1 * getRegions() >> regions.collect({ region ->
+                        Mock(Region) {
+                            _ * getRegionName() >> region
+                            _ * getEndpoint() >> "https://ec2.${region}.amazonaws.com"
+                        }
+                    })
+                }
+            }
+            0 * getEC2ForRegion()
+
+            _ * getEC2ForEndpoint({ it in endpointsFound }) >> { args ->
+                AvailabilityZone zone1 = new AvailabilityZone()
+                def region=regions[endpointsFound.indexOf(args[0])]
+                zone1.setRegionName(region)
+                zone1.setZoneName("${region}a")
+                Mock(AmazonEC2Client) {
+                    describeInstances(_) >> Mock(DescribeInstancesResult) {
+                        getReservations() >> [Mock(Reservation){
+                            getInstances()>>[mkInstance(region)]
+                        }]
+                    }
+                    describeImages(_) >> Mock(DescribeImagesResult) {
+                        getImages() >> [image]
+                    }
+                    describeAvailabilityZones() >> Mock(DescribeAvailabilityZonesResult) {
+                        getAvailabilityZones() >> [zone1]
+                    }
+                }
+            }
+
+            0 * _(*_)
+        }
+
+        int pageResults = 100
+        Properties mapping = new Properties()
+        mapping.put("region.selector","region")
+        def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
+        mapper.setEndpoint(endpoint)
+        when:
+        def instances = mapper.performQuery()
+        then:
+        instances!=null
+        instances.getNode("aninstanceId").getAttributes().containsKey("region")
+        instances.getNode("aninstanceId").getAttributes().get("region") in regions
+
+        where:
+        endpoint       | endpointsFound|regions
+        'ALL_REGIONS' | ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']|['us-west-1', 'us-east-1']
 
     }
 
     //
     // Private Methods
     //
-    private static Instance mkInstance() {
+    private static Instance mkInstance(String region='us-east-1') {
         Instance i = new Instance()
         i.withTags(new Tag('Name', 'bob'), new Tag('env', 'PROD'))
         i.setInstanceId("aninstanceId")
         i.setArchitecture("anarch")
         i.setImageId("ami-something")
-        i.setPlacement(new Placement("us-east-1a"))
+        i.setPlacement(new Placement("${region}a"))
 
         def state = new InstanceState()
         state.setName(InstanceStateName.Running)

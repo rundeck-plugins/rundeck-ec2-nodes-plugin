@@ -41,14 +41,14 @@ class EC2ResourceModelSourceSpec extends Specification {
         failingConfig.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH, badPath)
 
         // Create objects using actual ResourceModelSource and Factory
-        def workingRms = ec2ResourceModelSource(serviceWithGoodPass, workingConfig)
-        def failingRms = ec2ResourceModelSource(serviceWithBadPass, failingConfig)
+        EC2ResourceModelSource workingRms = ec2ResourceModelSource(serviceWithGoodPass, workingConfig)
+        EC2ResourceModelSource failingRms = ec2ResourceModelSource(serviceWithBadPass, failingConfig)
 
         when: "we check the access keys of the resource model source objects"
         // Instead of using getNodes, which would all be highly mocked, just check that we got as far as setting
         // proper credentials right before the point we would call to AWS
-        def workingRmsPass = workingRms.credentials.getAWSSecretKey()
-        def failingRmsPass = failingRms.credentials.getAWSSecretKey()
+        def workingRmsPass = workingRms.createCredentials().getAWSSecretKey()
+        def failingRmsPass = failingRms.createCredentials().getAWSSecretKey()
 
         then: "we see that the proper keys from the key storage or the inline key have been derived"
         workingRmsPass == validSecretKey

@@ -77,8 +77,10 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String HTTP_PROXY_PASS = "httpProxyPass";
     public static final String MAX_RESULTS = "pageResults";
 
+    public EC2ResourceModelSourceFactory() {
+
+    }
     public EC2ResourceModelSourceFactory(final Framework framework) {
-        this.framework = framework;
     }
 
     public ResourceModelSource createResourceModelSource(Services services, final Properties configuration) throws ConfigurationException {
@@ -92,6 +94,10 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     }
 
     static Description DESC = DescriptionBuilder.builder()
+
+    public static final Map<String, Object> PASSWORD_OPTIONS = Collections.singletonMap(StringRenderingConstants.DISPLAY_TYPE_KEY, StringRenderingConstants.DisplayType.PASSWORD);
+
+    public static final Description DESC = DescriptionBuilder.builder()
             .name(PROVIDER_NAME)
             .title("AWS EC2 Resources")
             .description("Produces nodes from AWS EC2")
@@ -106,7 +112,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             null,
-                            Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                            PASSWORD_OPTIONS
                     )
             )
             .property(
@@ -118,11 +124,11 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             null,
-                            new HashMap<String, Object>(){{
-                                put(StringRenderingConstants.SELECTION_ACCESSOR_KEY,StringRenderingConstants.SelectionAccessor.STORAGE_PATH);
-                                put(StringRenderingConstants.STORAGE_PATH_ROOT_KEY,"keys");
-                                put(StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY, "Rundeck-data-type=password");
-                            }}
+                            Map.of(
+                                StringRenderingConstants.SELECTION_ACCESSOR_KEY, StringRenderingConstants.SelectionAccessor.STORAGE_PATH,
+                                StringRenderingConstants.STORAGE_PATH_ROOT_KEY, "keys",
+                                StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY, "Rundeck-data-type=password"
+                            )
                     )
             )
             .property(
