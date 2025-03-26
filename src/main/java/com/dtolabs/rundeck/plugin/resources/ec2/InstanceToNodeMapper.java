@@ -36,6 +36,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -118,23 +122,22 @@ class InstanceToNodeMapper {
                 }
             }
 
+            ExecutorService executor = Executors.newFixedThreadPool(regions.size());
+            Collection<Future<Set<Instance>>> futures = new LinkedList<Future<Set<Instance>>>();
+            Set<Instance> allRegionInstances = new HashSet<>();
             for (String region : regions) {
+                executor.execute(() -> {
+                    allRegionInstances.addAll(getInstancesByRegion(region));
+                });
+            }
 
-                ec2.setEndpoint(region);
-                zones = ec2.describeAvailabilityZones();
-                final ArrayList<Filter> filters = buildFilters();
+            executor.shutdown();
 
-                final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
-
-                if (!newInstances.isEmpty() && newInstances != null) {
-                    instances.addAll(newInstances);
-                }
-
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                }
+            try {
+                executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+                instances.addAll(allRegionInstances);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
         }
         else if(region != null){
@@ -165,6 +168,27 @@ class InstanceToNodeMapper {
         }
         mapInstances(nodeSet, instances);
         return nodeSet;
+    }
+
+    private Set<Instance> getInstancesByRegion(String region) {
+        Set<Instance> allInstances = new HashSet<>();
+        ec2.setEndpoint(region);
+        zones = ec2.describeAvailabilityZones();
+        final ArrayList<Filter> filters = buildFilters();
+
+        final Set<Instance> newInstances = addExtraMappingAttribute(query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+        if (!newInstances.isEmpty() && newInstances != null) {
+            allInstances.addAll(newInstances);
+        }
+
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+
+        return allInstances;
     }
 
     private Set<Instance> query(final AmazonEC2 ec2, final DescribeInstancesRequest request) {
