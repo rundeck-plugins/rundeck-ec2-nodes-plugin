@@ -36,10 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -89,7 +86,7 @@ class InstanceToNodeMapper {
      * Perform the query and return the set of instances
      *
      */
-    public NodeSetImpl performQuery() {
+    public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Instance> instances = new HashSet<>();
@@ -124,20 +121,45 @@ class InstanceToNodeMapper {
 
             ExecutorService executor = Executors.newFixedThreadPool(regions.size());
             Collection<Future<Set<Instance>>> futures = new LinkedList<Future<Set<Instance>>>();
-            Set<Instance> allRegionInstances = new HashSet<>();
+            Set<Callable<Set<Instance>>> tasks = new HashSet<>();
             for (String region : regions) {
-                executor.execute(() -> {
-                    allRegionInstances.addAll(getInstancesByRegion(region));
-                });
+                if(queryNodeInstancesInParallel) {
+                    tasks.add(new Callable<Set<Instance>>() {
+                        @Override
+                        public Set<Instance> call() throws Exception {
+                            AmazonEC2 ec2 = null;
+                            if (null != credentials) {
+                                ec2 = new AmazonEC2Client(credentials, clientConfiguration);
+                            } else {
+                                ec2 = new AmazonEC2Client(clientConfiguration);
+                            }
+
+                            return getInstancesByRegion(region, ec2);
+                        };
+                    });
+                } else{
+                    instances.addAll(getInstancesByRegion(region, ec2));
+                }
             }
 
-            executor.shutdown();
-
-            try {
-                executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-                instances.addAll(allRegionInstances);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+            if(queryNodeInstancesInParallel) {
+                try {
+                    futures = executor.invokeAll(tasks);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    try {
+                        for (Future<Set<Instance>> future : futures) {
+                            if (future != null) {
+                                instances.addAll(future.get());
+                            }
+                        }
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    } catch (ExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
             }
         }
         else if(region != null){
@@ -170,7 +192,7 @@ class InstanceToNodeMapper {
         return nodeSet;
     }
 
-    private Set<Instance> getInstancesByRegion(String region) {
+    private Set<Instance> getInstancesByRegion(String region, AmazonEC2 ec2) {
         Set<Instance> allInstances = new HashSet<>();
         ec2.setEndpoint(region);
         zones = ec2.describeAvailabilityZones();

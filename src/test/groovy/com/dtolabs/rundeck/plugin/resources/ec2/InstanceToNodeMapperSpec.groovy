@@ -190,7 +190,7 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.setEndpoint("us-west-1")
 
         when:
-        def instances = mapper.performQuery()
+        def instances = mapper.performQuery(false)
         then:
         instances!=null
         instances.getNode("aninstanceId").getAttributes().containsKey(expected)
@@ -230,7 +230,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
         mapper.setEndpoint("us-west-1")
         when:
-        def instances = mapper.performQuery()
+        def instances = mapper.performQuery(false)
         then:
         instances!=null
         0*ec2.describeImages(_)
@@ -270,7 +270,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def mapper = new InstanceToNodeMapper(ec2, credentials, mapping, clientConfiguration, pageResults);
         mapper.setEndpoint("us-east-1")
         when:
-        def instances = mapper.performQuery()
+        def instances = mapper.performQuery(false)
         then:
         instances!=null
         instances.getNode("aninstanceId").getAttributes().containsKey("region")
