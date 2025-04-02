@@ -77,8 +77,10 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String HTTP_PROXY_PASS = "httpProxyPass";
     public static final String MAX_RESULTS = "pageResults";
 
+    public EC2ResourceModelSourceFactory() {
+
+    }
     public EC2ResourceModelSourceFactory(final Framework framework) {
-        this.framework = framework;
     }
 
     public ResourceModelSource createResourceModelSource(Services services, final Properties configuration) throws ConfigurationException {
@@ -91,7 +93,14 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
         return null;
     }
 
-    static Description DESC = DescriptionBuilder.builder()
+    public static final Map<String, Object> PROXY_OPTIONS = Map.of(
+            StringRenderingConstants.GROUP_NAME, "Proxy",
+            StringRenderingConstants.GROUPING, "secondary"
+    );
+
+    public static final Map<String, Object> PASSWORD_OPTIONS = Collections.singletonMap(StringRenderingConstants.DISPLAY_TYPE_KEY, StringRenderingConstants.DisplayType.PASSWORD);
+
+    public static final Description DESC = DescriptionBuilder.builder()
             .name(PROVIDER_NAME)
             .title("AWS EC2 Resources")
             .description("Produces nodes from AWS EC2")
@@ -106,7 +115,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             null,
-                            Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                            PASSWORD_OPTIONS
                     )
             )
             .property(
@@ -118,11 +127,11 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             null,
-                            new HashMap<String, Object>(){{
-                                put(StringRenderingConstants.SELECTION_ACCESSOR_KEY,StringRenderingConstants.SelectionAccessor.STORAGE_PATH);
-                                put(StringRenderingConstants.STORAGE_PATH_ROOT_KEY,"keys");
-                                put(StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY, "Rundeck-data-type=password");
-                            }}
+                            Map.of(
+                                StringRenderingConstants.SELECTION_ACCESSOR_KEY, StringRenderingConstants.SelectionAccessor.STORAGE_PATH,
+                                StringRenderingConstants.STORAGE_PATH_ROOT_KEY, "keys",
+                                StringRenderingConstants.STORAGE_FILE_META_FILTER_KEY, "Rundeck-data-type=password"
+                            )
                     )
             )
             .property(
@@ -167,9 +176,11 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             .property(PropertyUtil.string(REGION, "Region", "AWS EC2 region.",
                     false,
                     null))
-            .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null))
-            .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80"))
-            .property(PropertyUtil.string(HTTP_PROXY_USER, "HTTP Proxy User", "HTTP Proxy User Name, or blank for default", false, null))
+            .property(PropertyUtil.string(HTTP_PROXY_HOST, "HTTP Proxy Host", "HTTP Proxy Host Name, or blank for default", false, null, null,null,
+                    PROXY_OPTIONS
+            ))
+            .property(PropertyUtil.integer(HTTP_PROXY_PORT, "HTTP Proxy Port", "HTTP Proxy Port, or blank for 80", false, "80",null,null,PROXY_OPTIONS))
+            .property(PropertyUtil.string(HTTP_PROXY_USER, "HTTP Proxy User", "HTTP Proxy User Name, or blank for default", false, null,null,null,PROXY_OPTIONS))
             .property(
                     PropertyUtil.string(
                             HTTP_PROXY_PASS,
@@ -179,7 +190,11 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             null,
                             null,
                             null,
-                            Collections.singletonMap("displayType", (Object) StringRenderingConstants.DisplayType.PASSWORD)
+                            Map.of(
+                                    StringRenderingConstants.GROUP_NAME, "Proxy",
+                                    StringRenderingConstants.GROUPING, "secondary",
+                                    StringRenderingConstants.DISPLAY_TYPE_KEY, StringRenderingConstants.DisplayType.PASSWORD
+                            )
                     )
             )
             .property(PropertyUtil.string(MAPPING_PARAMS, "Mapping Params",
@@ -188,13 +203,11 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                             "separated by \";\"",
                     false, null))
             .property(PropertyUtil.string(MAPPING_FILE, "Mapping File", "Property mapping File", false, null,
-                    new PropertyValidator() {
-                        public boolean isValid(final String s) throws ValidationException {
-                            if (!new File(s).isFile()) {
-                                throw new ValidationException("File does not exist: " + s);
-                            }
-                            return true;
+                    s -> {
+                        if (!new File(s).isFile()) {
+                            throw new ValidationException("File does not exist: " + s);
                         }
+                        return true;
                     }))
             .property(PropertyUtil.bool(USE_DEFAULT_MAPPING, "Use Default Mapping",
                     "Start with default mapping definition. (Defaults will automatically be used if no others are " +
