@@ -119,11 +119,15 @@ class InstanceToNodeMapper {
                 }
             }
 
-            ExecutorService executor = Executors.newFixedThreadPool(regions.size());
+            ExecutorService executor = null;
             Collection<Future<Set<Instance>>> futures = new LinkedList<Future<Set<Instance>>>();
             Set<Callable<Set<Instance>>> tasks = new HashSet<>();
             for (String region : regions) {
                 if(queryNodeInstancesInParallel) {
+                    if(executor == null){
+                        logger.info("Creating thread pool for {} regions", regions.size() );
+                        executor = Executors.newFixedThreadPool(regions.size());
+                    }
                     tasks.add(new Callable<Set<Instance>>() {
                         @Override
                         public Set<Instance> call() throws Exception {
@@ -144,6 +148,7 @@ class InstanceToNodeMapper {
 
             if(queryNodeInstancesInParallel) {
                 try {
+                    logger.info("Querying {} regions in parallel", regions.size() );
                     futures = executor.invokeAll(tasks);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -154,11 +159,26 @@ class InstanceToNodeMapper {
                                 instances.addAll(future.get());
                             }
                         }
+                        logger.info("Finished querying {} regions in parallel", regions.size() );
+                        executor.shutdown();
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
                     } catch (ExecutionException e) {
                         throw new RuntimeException(e);
                     }
+                }
+                try {
+                    // Wait for 90 seconds for all tasks to finish
+                    logger.info("Waiting for {} seconds for all tasks to finish", 90);
+                    executor.awaitTermination(90, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    // Restore interrupted status
+                    logger.warn("Thread interrupted while waiting for tasks to finish", ignored);
+                    Thread.currentThread().interrupt();
+                } finally {
+                    // Force shutdown if not already done
+                    logger.warn("Forcing shutdown of thread pool");
+                    executor.shutdownNow();
                 }
             }
         }
