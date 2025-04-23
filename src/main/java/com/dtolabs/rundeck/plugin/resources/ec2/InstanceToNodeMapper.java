@@ -190,12 +190,6 @@ class InstanceToNodeMapper {
             allInstances.addAll(newInstances);
         }
 
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-        }
-
         return allInstances;
     }
 
