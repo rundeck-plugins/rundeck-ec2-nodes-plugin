@@ -325,7 +325,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
         mapper.setEndpoint(endpoints.join(', '))
         when:
-        def instances = mapper.performQuery()
+        def instances = mapper.performQuery(false)
         then:
         instances!=null
         instances.getNode("aninstanceId").getAttributes().containsKey("region")
@@ -384,7 +384,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def mapper = new InstanceToNodeMapper(supplier, mapping, pageResults);
         mapper.setEndpoint(endpoint)
         when:
-        def instances = mapper.performQuery()
+        def instances = mapper.performQuery(false)
         then:
         instances!=null
         instances.getNode("aninstanceId").getAttributes().containsKey("region")
