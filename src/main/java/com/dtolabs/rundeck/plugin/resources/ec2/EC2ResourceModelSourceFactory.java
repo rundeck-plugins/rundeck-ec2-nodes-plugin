@@ -71,6 +71,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String REFRESH_INTERVAL = "refreshInterval";
     public static final String SYNCHRONOUS_LOAD = "synchronousLoad";
     public static final String USE_DEFAULT_MAPPING = "useDefaultMapping";
+    public static final String QUERY_NODE_INSTANCES_IN_PARALLEL = "queryNodeInstancesInParallel";
     public static final String HTTP_PROXY_HOST = "httpProxyHost";
     public static final String HTTP_PROXY_PORT = "httpProxyPort";
     public static final String HTTP_PROXY_USER = "httpProxyUser";
@@ -220,6 +221,9 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
             .property(PropertyUtil.integer(MAX_RESULTS, "Max API Results",
                     "Max number of reservations returned per AWS API call.",
                     false, "100"))
+            .property(PropertyUtil.bool(QUERY_NODE_INSTANCES_IN_PARALLEL, "Query Node Instances in Parallel",
+                    "Query node instances in parallel. If false, instances will be queried one at a time.",
+                    false, "false"))
 
             .build();
 

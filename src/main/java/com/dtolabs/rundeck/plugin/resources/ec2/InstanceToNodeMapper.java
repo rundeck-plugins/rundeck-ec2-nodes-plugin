@@ -24,6 +24,7 @@
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
 import com.amazonaws.services.ec2.AmazonEC2;
+import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
@@ -33,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -69,7 +71,7 @@ class InstanceToNodeMapper {
      * Perform the query and return the set of instances
      *
      */
-    public NodeSetImpl performQuery() {
+    public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Instance> instances = new HashSet<>();
@@ -77,20 +79,59 @@ class InstanceToNodeMapper {
         DescribeInstancesRequest request = new DescribeInstancesRequest().withFilters(buildFilters()).withMaxResults(maxResults);
 
         if(getEndpoint() != null) {
-            for (String endpoint : determineEndpoints()) {
-                AmazonEC2 ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
-                zones = ec2.describeAvailabilityZones();
-
-                final Set<Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request));
-
-                if (newInstances != null && !newInstances.isEmpty()) {
-                    instances.addAll(newInstances);
+            ExecutorService executor = null;
+            Collection<Future<Set<Instance>>> futures = new LinkedList<Future<Set<Instance>>>();
+            Set<Callable<Set<Instance>>> tasks = new HashSet<>();
+            List<String> endpoints = determineEndpoints();
+            for (String endpoint : endpoints) {
+                if(queryNodeInstancesInParallel) {
+                    if(executor == null){
+                        logger.info("Creating thread pool for {} regions", endpoints.size() );
+                        executor = Executors.newFixedThreadPool(endpoints.size());
+                    }
+                    tasks.add(new Callable<Set<Instance>>() {
+                        @Override
+                        public Set<Instance> call() throws Exception {
+                            return getInstancesByRegion(endpoint);
+                        };
+                    });
+                }else{
+                    instances.addAll(getInstancesByRegion(endpoint));
                 }
-
+            }
+            if(queryNodeInstancesInParallel) {
                 try {
-                    Thread.sleep(100);
-                } catch (InterruptedException ex) {
+                    logger.info("Querying {} regions in parallel", endpoints.size() );
+                    futures = executor.invokeAll(tasks);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    try {
+                        for (Future<Set<Instance>> future : futures) {
+                            if (future != null) {
+                                instances.addAll(future.get());
+                            }
+                        }
+                        logger.info("Finished querying {} regions in parallel", endpoints.size() );
+                        executor.shutdown();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    } catch (ExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                try {
+                    // Wait for 90 seconds for all tasks to finish
+                    logger.info("Waiting for {} seconds for all tasks to finish", 90);
+                    executor.awaitTermination(90, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    // Restore interrupted status
+                    logger.warn("Thread interrupted while waiting for tasks to finish", ignored);
                     Thread.currentThread().interrupt();
+                } finally {
+                    // Force shutdown if not already done
+                    logger.warn("Forcing shutdown of thread pool");
+                    executor.shutdownNow();
                 }
             }
         }
@@ -135,6 +176,21 @@ class InstanceToNodeMapper {
             }
         }
         return endpoints;
+    }
+
+    private Set<Instance> getInstancesByRegion(String endpoint) {
+        Set<Instance> allInstances = new HashSet<>();
+        AmazonEC2 ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
+        zones = ec2.describeAvailabilityZones();
+        final ArrayList<Filter> filters = buildFilters();
+
+        final Set<Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+
+        if (!newInstances.isEmpty() && newInstances != null) {
+            allInstances.addAll(newInstances);
+        }
+
+        return allInstances;
     }
 
     private Set<Instance> query(final AmazonEC2 ec2, final DescribeInstancesRequest request) {

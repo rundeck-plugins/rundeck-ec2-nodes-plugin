@@ -88,6 +88,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     boolean useDefaultMapping = true;
     boolean runningOnly = false;
     boolean queryAsync = true;
+    boolean queryNodeInstancesInParallel = false;
     Future<INodeSet> futureResult = null;
     final Properties mapping = new Properties();
     final String assumeRoleArn;
@@ -219,6 +220,8 @@ public class EC2ResourceModelSource implements ResourceModelSource {
 
         queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
 
+        this.queryNodeInstancesInParallel = Boolean.parseBoolean(configuration.getProperty(EC2ResourceModelSourceFactory.QUERY_NODE_INSTANCES_IN_PARALLEL, "false"));
+
         final ArrayList<String> params = new ArrayList<String>();
         if (null != filterParams) {
             Collections.addAll(params, filterParams.split(";"));
@@ -313,12 +316,12 @@ public class EC2ResourceModelSource implements ResourceModelSource {
          */
         if (lastRefresh > 0 && queryAsync && null == futureResult) {
             futureResult = executor.submit(() -> {
-                return mapper.performQuery();
+                return mapper.performQuery(queryNodeInstancesInParallel);
             });
             lastRefresh = System.currentTimeMillis();
         } else if (!queryAsync || lastRefresh < 1) {
             //always perform synchronous query the first time
-            iNodeSet = mapper.performQuery();
+            iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
             lastRefresh = System.currentTimeMillis();
         }
 
