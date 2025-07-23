@@ -7,7 +7,7 @@ groovy = "3.0.23"
 jacksonDatabind = "2.18.2"
 nexusPublish = "2.0.0"
 objenesis = "3.4"
-rundeckCore = "5.8.0-20241205"
+rundeckCore = "5.14.0-rc1-20250722"
 slf4j = "1.7.36"
 spock = "2.3-groovy-3.0"
 
