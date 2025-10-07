@@ -10,6 +10,8 @@ objenesis = "3.4"
 rundeckCore = "5.14.0-rc1-20250722"
 slf4j = "1.7.36"
 spock = "2.3-groovy-3.0"
+# Security overrides for transitive dependencies
+commonsLang3 = "3.18.0"
 
 [libraries]
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
@@ -23,6 +25,7 @@ groovyAll = { group = "org.codehaus.groovy", name = "groovy-all", version.ref = 
 spockCore = { group = "org.spockframework", name = "spock-core", version.ref = "spock" }
 cglibNodep = { group = "cglib", name = "cglib-nodep", version.ref = "cglib" }
 objenesis = { group = "org.objenesis", name = "objenesis", version.ref = "objenesis" }
+commonsLang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLang3" }
 
 [bundles]
 awsSdk = ["awsSdkCore", "awsSdkSts"]
