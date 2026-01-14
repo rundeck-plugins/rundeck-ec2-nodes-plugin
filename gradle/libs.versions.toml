@@ -11,7 +11,7 @@ rundeckCore = "5.14.0-rc1-20250722"
 slf4j = "1.7.36"
 spock = "2.3-groovy-3.0"
 # Security overrides for transitive dependencies
-commonsLang3 = "3.17.0"
+commonsLang3 = "3.20.0"
 
 [libraries]
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
