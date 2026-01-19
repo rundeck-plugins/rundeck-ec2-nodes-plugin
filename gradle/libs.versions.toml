@@ -1,5 +1,5 @@
 [versions]
-axionRelease = "1.18.17"
+axionRelease = "1.21.1"
 awsSdk = "1.12.780"
 cglib = "3.3.0"
 commonsBeanutils = "1.11.0"
