@@ -55,8 +55,15 @@ configurations{
     }
 }
 repositories {
-    mavenCentral()
     mavenLocal()
+    maven {
+        name = 'Central Portal Snapshots'
+        url = 'https://central.sonatype.com/repository/maven-snapshots/'
+        content {
+            includeGroup('org.rundeck')
+        }
+    }
+    mavenCentral()
 }
 dependencies {
     implementation libs.slf4jApi
@@ -121,6 +128,9 @@ jar {
 
 test {
     useJUnitPlatform()
+    // Java 17 requires these for cglib/Spock mocking
+    jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.util=ALL-UNNAMED'
 }
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
