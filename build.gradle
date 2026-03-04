@@ -12,7 +12,7 @@ plugins {
     alias(libs.plugins.nexusPublish)
 }
 
-group = 'org.rundeck.plugins'
+group = 'com.rundeck.plugins'
 ext.publishName = "EC2 Nodes Plugin ${project.version}"
 ext.publishDescription = project.description ?: 'Produces Rundeck Nodes from AWS EC2'
 ext.githubSlug = 'rundeck-plugins/rundeck-ec2-nodes-plugin'
@@ -21,7 +21,7 @@ ext.developers = [
 ]
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
     withJavadocJar()
     withSourcesJar()
 }
@@ -37,9 +37,10 @@ ext.rundeckPluginVersion = '1.1'
 scmVersion {
     ignoreUncommittedChanges = false
     tag {
-        prefix = 'v'
+        prefix = ''           // NO "v" prefix - see PLUGIN_TAGGING_ARCHITECTURE.md
         versionSeparator = ''
     }
+    versionCreator 'simple'  // Use simple version creator (just tag name)
 }
 project.version = scmVersion.version
 
@@ -125,7 +126,7 @@ test {
 jar.dependsOn(copyToLib)
 
 nexusPublishing {
-    packageGroup = 'org.rundeck.plugins'
+    packageGroup = 'com.rundeck.plugins'
     repositories {
         sonatype {
             nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
@@ -135,3 +136,20 @@ nexusPublishing {
 }
 
 apply from: "${rootDir}/gradle/publishing.gradle"
+
+// Add PackageCloud repository
+publishing {
+    repositories {
+        maven {
+            name = "PackageCloudTest"
+            url = uri("https://packagecloud.io/pagerduty/rundeckpro-test/maven2")
+            authentication {
+                header(HttpHeaderAuthentication)
+            }
+            credentials(HttpHeaderCredentials) {
+                name = "Authorization"
+                value = "Bearer " + (System.getenv("PKGCLD_WRITE_TOKEN") ?: project.findProperty("pkgcldWriteToken"))
+            }
+        }
+    }
+}
