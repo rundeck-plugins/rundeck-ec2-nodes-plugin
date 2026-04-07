@@ -12,7 +12,7 @@ plugins {
     alias(libs.plugins.nexusPublish)
 }
 
-group = 'com.rundeck.plugins'
+group = 'org.rundeck.plugins'
 ext.publishName = "EC2 Nodes Plugin ${project.version}"
 ext.publishDescription = project.description ?: 'Produces Rundeck Nodes from AWS EC2'
 ext.githubSlug = 'rundeck-plugins/rundeck-ec2-nodes-plugin'
@@ -67,7 +67,10 @@ repositories {
 }
 dependencies {
     implementation libs.slf4jApi
-    implementation(libs.rundeckCore) {
+    compileOnly(libs.rundeckCore) {
+        exclude group: "com.google.guava"
+    }
+    testImplementation(libs.rundeckCore) {
         exclude group: "com.google.guava"
     }
     implementation libs.bundles.awsSdk
@@ -136,7 +139,7 @@ test {
 jar.dependsOn(copyToLib)
 
 nexusPublishing {
-    packageGroup = 'com.rundeck.plugins'
+    packageGroup = 'org.rundeck.plugins'
     repositories {
         sonatype {
             nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
