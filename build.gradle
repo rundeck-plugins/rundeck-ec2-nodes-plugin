@@ -21,7 +21,7 @@ ext.developers = [
 ]
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
     withJavadocJar()
     withSourcesJar()
 }
@@ -37,9 +37,10 @@ ext.rundeckPluginVersion = '1.1'
 scmVersion {
     ignoreUncommittedChanges = false
     tag {
-        prefix = 'v'
+        prefix = ''           // NO "v" prefix - see PLUGIN_TAGGING_ARCHITECTURE.md
         versionSeparator = ''
     }
+    versionCreator 'simple'  // Use simple version creator (just tag name)
 }
 project.version = scmVersion.version
 
@@ -54,12 +55,22 @@ configurations{
     }
 }
 repositories {
-    mavenCentral()
     mavenLocal()
+    maven {
+        name = 'Central Portal Snapshots'
+        url = 'https://central.sonatype.com/repository/maven-snapshots/'
+        content {
+            includeGroup('org.rundeck')
+        }
+    }
+    mavenCentral()
 }
 dependencies {
     implementation libs.slf4jApi
-    implementation(libs.rundeckCore) {
+    compileOnly(libs.rundeckCore) {
+        exclude group: "com.google.guava"
+    }
+    testImplementation(libs.rundeckCore) {
         exclude group: "com.google.guava"
     }
     implementation libs.bundles.awsSdk
@@ -120,6 +131,9 @@ jar {
 
 test {
     useJUnitPlatform()
+    // Java 17 requires these for cglib/Spock mocking
+    jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.util=ALL-UNNAMED'
 }
 //set jar task to depend on copyToLib
 jar.dependsOn(copyToLib)
@@ -135,3 +149,20 @@ nexusPublishing {
 }
 
 apply from: "${rootDir}/gradle/publishing.gradle"
+
+// Add PackageCloud repository
+publishing {
+    repositories {
+        maven {
+            name = "PackageCloudTest"
+            url = uri("https://packagecloud.io/pagerduty/rundeckpro-test/maven2")
+            authentication {
+                header(HttpHeaderAuthentication)
+            }
+            credentials(HttpHeaderCredentials) {
+                name = "Authorization"
+                value = "Bearer " + (System.getenv("PKGCLD_WRITE_TOKEN") ?: project.findProperty("pkgcldWriteToken"))
+            }
+        }
+    }
+}
