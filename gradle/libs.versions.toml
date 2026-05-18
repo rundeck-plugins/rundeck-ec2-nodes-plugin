@@ -7,7 +7,7 @@ groovy = "4.0.29"
 jacksonDatabind = "2.21.2"
 nexusPublish = "2.0.0"
 objenesis = "3.4"
-rundeckCore = "6.0.0-alpha1-20260407"
+rundeckCore = "7.0.1-20260409"
 slf4j = "1.7.36"
 spock = "2.4-groovy-4.0"
 # Security overrides for transitive dependencies
