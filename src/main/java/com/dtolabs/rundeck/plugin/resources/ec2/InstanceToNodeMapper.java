@@ -23,16 +23,28 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.AmazonEC2Client;
-import com.amazonaws.services.ec2.model.*;
 import com.dtolabs.rundeck.core.common.INodeEntry;
 import com.dtolabs.rundeck.core.common.NodeEntryImpl;
 import com.dtolabs.rundeck.core.common.NodeSetImpl;
-import org.apache.commons.beanutils.BeanUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.ec2.model.AvailabilityZone;
+import software.amazon.awssdk.services.ec2.model.DescribeAvailabilityZonesResponse;
+import software.amazon.awssdk.services.ec2.model.DescribeImagesRequest;
+import software.amazon.awssdk.services.ec2.model.DescribeImagesResponse;
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesRequest;
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesResponse;
+import software.amazon.awssdk.services.ec2.model.DescribeRegionsResponse;
+import software.amazon.awssdk.services.ec2.model.Filter;
+import software.amazon.awssdk.services.ec2.model.Image;
+import software.amazon.awssdk.services.ec2.model.Instance;
+import software.amazon.awssdk.services.ec2.model.InstanceStateName;
+import software.amazon.awssdk.services.ec2.model.Region;
+import software.amazon.awssdk.services.ec2.model.Reservation;
+import software.amazon.awssdk.services.ec2.model.Tag;
 
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
@@ -53,7 +65,7 @@ class InstanceToNodeMapper {
     private Properties mapping;
     private final int maxResults;
     private final EC2Supplier ec2Supplier;
-    private DescribeAvailabilityZonesResult zones;
+    private DescribeAvailabilityZonesResponse zones;
 
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
@@ -74,14 +86,17 @@ class InstanceToNodeMapper {
     public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
-        Set<Instance> instances = new HashSet<>();
+        Set<Ec2Instance> instances = new HashSet<>();
 
-        DescribeInstancesRequest request = new DescribeInstancesRequest().withFilters(buildFilters()).withMaxResults(maxResults);
+        DescribeInstancesRequest request = DescribeInstancesRequest.builder()
+                .filters(buildFilters())
+                .maxResults(maxResults)
+                .build();
 
         if(getEndpoint() != null) {
             ExecutorService executor = null;
-            Collection<Future<Set<Instance>>> futures = new LinkedList<Future<Set<Instance>>>();
-            Set<Callable<Set<Instance>>> tasks = new HashSet<>();
+            Collection<Future<Set<Ec2Instance>>> futures = new LinkedList<Future<Set<Ec2Instance>>>();
+            Set<Callable<Set<Ec2Instance>>> tasks = new HashSet<>();
             List<String> endpoints = determineEndpoints();
             for (String endpoint : endpoints) {
                 if(queryNodeInstancesInParallel) {
@@ -89,9 +104,9 @@ class InstanceToNodeMapper {
                         logger.info("Creating thread pool for {} regions", endpoints.size() );
                         executor = Executors.newFixedThreadPool(endpoints.size());
                     }
-                    tasks.add(new Callable<Set<Instance>>() {
+                    tasks.add(new Callable<Set<Ec2Instance>>() {
                         @Override
-                        public Set<Instance> call() throws Exception {
+                        public Set<Ec2Instance> call() throws Exception {
                             return getInstancesByRegion(endpoint);
                         };
                     });
@@ -107,7 +122,7 @@ class InstanceToNodeMapper {
                     throw new RuntimeException(e);
                 } finally {
                     try {
-                        for (Future<Set<Instance>> future : futures) {
+                        for (Future<Set<Ec2Instance>> future : futures) {
                             if (future != null) {
                                 instances.addAll(future.get());
                             }
@@ -136,19 +151,19 @@ class InstanceToNodeMapper {
             }
         }
         else if(region != null){
-            AmazonEC2 ec2ForRegion = ec2Supplier.getEC2ForRegion(region);
+            Ec2Client ec2ForRegion = ec2Supplier.getEC2ForRegion(region);
 
 
             zones = ec2ForRegion.describeAvailabilityZones();
 
-            final Set<Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request));
+            final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request));
 
             if (newInstances != null && !newInstances.isEmpty()) {
                 instances.addAll(newInstances);
             }
         }
         else{
-            AmazonEC2 ec2 = ec2Supplier.getEC2ForDefaultRegion();
+            Ec2Client ec2 = ec2Supplier.getEC2ForDefaultRegion();
             zones = ec2.describeAvailabilityZones();
 
             instances = addExtraMappingAttribute(ec2,query(ec2, request));
@@ -162,9 +177,9 @@ class InstanceToNodeMapper {
         if (getEndpoint().equals("ALL_REGIONS")) {
 
             //Retrieve dynamic list of EC2 regions from AWS
-            DescribeRegionsResult regionsResult = ec2Supplier.getEC2ForDefaultRegion().describeRegions();
-            for (Region region : regionsResult.getRegions()) {
-                endpoints.add(region.getEndpoint());
+            DescribeRegionsResponse regionsResult = ec2Supplier.getEC2ForDefaultRegion().describeRegions();
+            for (Region region : regionsResult.regions()) {
+                endpoints.add(region.endpoint());
             }
 
         } else {
@@ -178,70 +193,78 @@ class InstanceToNodeMapper {
         return endpoints;
     }
 
-    private Set<Instance> getInstancesByRegion(String endpoint) {
-        Set<Instance> allInstances = new HashSet<>();
-        AmazonEC2 ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
+    private Set<Ec2Instance> getInstancesByRegion(String endpoint) {
+        Set<Ec2Instance> allInstances = new HashSet<>();
+        Ec2Client ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
         zones = ec2.describeAvailabilityZones();
-        final ArrayList<Filter> filters = buildFilters();
+        final List<Filter> filters = buildFilters();
 
-        final Set<Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, new DescribeInstancesRequest().withFilters(filters).withMaxResults(maxResults)));
+        DescribeInstancesRequest request = DescribeInstancesRequest.builder()
+                .filters(filters)
+                .maxResults(maxResults)
+                .build();
 
-        if (!newInstances.isEmpty() && newInstances != null) {
+        final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request));
+
+        if (newInstances != null && !newInstances.isEmpty()) {
             allInstances.addAll(newInstances);
         }
 
         return allInstances;
     }
 
-    private Set<Instance> query(final AmazonEC2 ec2, final DescribeInstancesRequest request) {
+    private Set<Ec2Instance> query(final Ec2Client ec2, final DescribeInstancesRequest request) {
         //create "running" filter
-        final Set<Instance> instances = new HashSet<>();
+        final Set<Ec2Instance> instances = new HashSet<>();
 
         String token = null;
         do {
-            final DescribeInstancesRequest pagedRequest = request.clone();
-            pagedRequest.setNextToken(token);
+            final DescribeInstancesRequest pagedRequest = request.toBuilder().nextToken(token).build();
 
-            final DescribeInstancesResult describeInstancesRequest = ec2.describeInstances(pagedRequest);
+            final DescribeInstancesResponse describeInstancesResponse = ec2.describeInstances(pagedRequest);
 
-            token = describeInstancesRequest.getNextToken();
+            token = describeInstancesResponse.nextToken();
 
-            instances.addAll(examineResult(describeInstancesRequest));
+            instances.addAll(examineResult(describeInstancesResponse));
         } while(token != null);
 
         return instances;
     }
 
-    private Set<Instance> examineResult(DescribeInstancesResult describeInstancesRequest) {
-        final List<Reservation> reservations = describeInstancesRequest.getReservations();
-        final Set<Instance> instances = new HashSet<>();
+    private Set<Ec2Instance> examineResult(DescribeInstancesResponse describeInstancesResponse) {
+        final List<Reservation> reservations = describeInstancesResponse.reservations();
+        final Set<Ec2Instance> instances = new HashSet<>();
 
         for (final Reservation reservation : reservations) {
-            instances.addAll(reservation.getInstances());
+            for (final Instance instance : reservation.instances()) {
+                instances.add(Ec2Instance.builder(instance));
+            }
         }
         return instances;
     }
 
-    private ArrayList<Filter> buildFilters() {
-        final ArrayList<Filter> filters = new ArrayList<>();
+    private List<Filter> buildFilters() {
+        final List<Filter> filters = new ArrayList<>();
         if (isRunningStateOnly()) {
-            final Filter filter = new Filter("instance-state-name").withValues(InstanceStateName.Running.toString());
-            filters.add(filter);
+            filters.add(Filter.builder()
+                    .name("instance-state-name")
+                    .values(InstanceStateName.RUNNING.toString())
+                    .build());
         }
 
         if (null != getFilterParams()) {
             for (final String filterParam : getFilterParams()) {
                 final String[] x = filterParam.split("=", 2);
                 if (!"".equals(x[0]) && !"".equals(x[1])) {
-                    filters.add(new Filter(x[0]).withValues(x[1].split(",")));
+                    filters.add(Filter.builder().name(x[0]).values(x[1].split(",")).build());
                 }
             }
         }
         return filters;
     }
 
-    private void mapInstances(final NodeSetImpl nodeSet, final Set<Instance> instances) {
-        for (final Instance inst : instances) {
+    private void mapInstances(final NodeSetImpl nodeSet, final Set<Ec2Instance> instances) {
+        for (final Ec2Instance inst : instances) {
             final INodeEntry iNodeEntry;
             try {
                 iNodeEntry = InstanceToNodeMapper.instanceToNode(inst, mapping);
@@ -258,17 +281,17 @@ class InstanceToNodeMapper {
      * Convert an AWS EC2 Instance to a RunDeck INodeEntry based on the mapping input
      */
     @SuppressWarnings("unchecked")
-    static INodeEntry instanceToNode(final Instance inst, final Properties mapping) throws GeneratorException {
+    static INodeEntry instanceToNode(final Ec2Instance inst, final Properties mapping) throws GeneratorException {
         final NodeEntryImpl node = new NodeEntryImpl();
 
         //evaluate single settings.selector=tags/* mapping
         if ("tags/*".equals(mapping.getProperty("attributes.selector"))) {
             //iterate through instance tags and generate settings
-            for (final Tag tag : inst.getTags()) {
+            for (final Tag tag : inst.instance().tags()) {
                 if (null == node.getAttributes()) {
                     node.setAttributes(new HashMap<>());
                 }
-                node.getAttributes().put(tag.getKey(), tag.getValue());
+                node.getAttributes().put(tag.key(), tag.value());
             }
         }
         if (null != mapping.getProperty("tags.selector")) {
@@ -371,7 +394,7 @@ class InstanceToNodeMapper {
             name = node.getHostname();
         }
         if (null == name || name.isEmpty()) {
-            name = inst.getInstanceId();
+            name = inst.instanceId();
         }
         node.setNodename(name);
 
@@ -390,7 +413,7 @@ class InstanceToNodeMapper {
      * Return the result of the selector applied to the instance, otherwise return the defaultValue. The selector can be
      * a comma-separated list of selectors
      */
-    public static String applySelector(final Instance inst, final String selector, final String defaultValue) throws
+    public static String applySelector(final Ec2Instance inst, final String selector, final String defaultValue) throws
         GeneratorException {
         return applySelector(inst, selector, defaultValue, false);
     }
@@ -403,7 +426,7 @@ class InstanceToNodeMapper {
      * @param defaultValue a default value to return if there is no result from the selector
      * @param tagMerge if true, allow | separator to merge multiple values
      */
-    public static String applySelector(final Instance inst, final String selector, final String defaultValue,
+    public static String applySelector(final Ec2Instance inst, final String selector, final String defaultValue,
                                        final boolean tagMerge) throws
         GeneratorException {
 
@@ -449,7 +472,7 @@ class InstanceToNodeMapper {
      *
      * @throws GeneratorException
      */
-    static String applyMultiSelector(final Instance inst, final String... selectors) throws
+    static String applyMultiSelector(final Ec2Instance inst, final String... selectors) throws
             GeneratorException
     {
         StringBuilder sb = new StringBuilder();
@@ -469,28 +492,103 @@ class InstanceToNodeMapper {
 
         return hasVal ? sb.toString() : null;
     }
-    static String applySingleSelector(final Instance inst, final String selector) throws
+    static String applySingleSelector(final Ec2Instance inst, final String selector) throws
         GeneratorException {
         if (null != selector && selector.startsWith("tags/")) {
             final String tag = selector.substring("tags/".length());
-            final List<Tag> tags = inst.getTags();
+            final List<Tag> tags = inst.instance().tags();
             for (final Tag tag1 : tags) {
-                if (tag.equals(tag1.getKey())) {
-                    return tag1.getValue();
+                if (tag.equals(tag1.key())) {
+                    return tag1.value();
                 }
             }
         } else if (null != selector && !selector.isEmpty()) {
-            try {
-                final String value = BeanUtils.getProperty(inst, selector);
-                if (null != value) {
-                    return value;
-                }
-            } catch (Exception e) {
-                throw new GeneratorException(e);
-            }
+            return resolveProperty(inst, selector);
         }
 
         return null;
+    }
+
+    /**
+     * Resolve a dot-separated property selector against the instance, preserving the historical
+     * BeanUtils behavior used with the AWS SDK v1 model. Each path segment is resolved by invoking
+     * the matching AWS SDK v2 fluent accessor; the String accessor variant (e.g. {@code
+     * architectureAsString()}) is preferred so enum-valued fields keep returning their raw wire
+     * value. The extra mapping attributes (imageName, region) are read from the {@link Ec2Instance}
+     * wrapper itself. An unknown property results in a {@link GeneratorException}, matching the
+     * previous behavior.
+     */
+    private static String resolveProperty(final Ec2Instance inst, final String selector) throws GeneratorException {
+        Object current = inst;
+        for (final String segment : selector.split("\\.")) {
+            if (null == current) {
+                return null;
+            }
+            current = invokeSegment(current, segment);
+        }
+        return stringify(current);
+    }
+
+    private static Object invokeSegment(Object target, final String name) throws GeneratorException {
+        if (target instanceof Ec2Instance) {
+            final Ec2Instance ec2 = (Ec2Instance) target;
+            if ("imageName".equals(name)) {
+                return ec2.imageName();
+            }
+            if ("region".equals(name)) {
+                return ec2.region();
+            }
+            target = ec2.instance();
+            if (null == target) {
+                return null;
+            }
+        }
+        final Method accessor = findAccessor(target.getClass(), name);
+        if (null == accessor) {
+            throw new GeneratorException(
+                    new NoSuchMethodException("No EC2 property '" + name + "' on " + target.getClass().getName()));
+        }
+        try {
+            return accessor.invoke(target);
+        } catch (Exception e) {
+            throw new GeneratorException(e);
+        }
+    }
+
+    /**
+     * Find a no-arg accessor on the AWS SDK model class for the given property name. Prefer the
+     * {@code <name>AsString} variant generated for enum fields so the raw string value is returned.
+     */
+    private static Method findAccessor(final Class<?> type, final String name) {
+        Method method = lookupAccessor(type, name + "AsString");
+        if (null == method) {
+            method = lookupAccessor(type, name);
+        }
+        return method;
+    }
+
+    private static Method lookupAccessor(final Class<?> type, final String name) {
+        try {
+            final Method method = type.getMethod(name);
+            if (method.getParameterCount() == 0
+                    && method.getReturnType() != void.class
+                    && method.getDeclaringClass().getName().startsWith("software.amazon.awssdk")) {
+                return method;
+            }
+        } catch (NoSuchMethodException ignored) {
+            // not a property accessor
+        }
+        return null;
+    }
+
+    private static String stringify(final Object value) {
+        if (null == value) {
+            return null;
+        }
+        if (value instanceof String) {
+            return (String) value;
+        }
+        return value.toString();
     }
 
     /**
@@ -564,7 +662,7 @@ class InstanceToNodeMapper {
         }
     }
 
-    public Set<Instance> addExtraMappingAttribute(AmazonEC2 ec2, Set<Instance> instances) {
+    public Set<Ec2Instance> addExtraMappingAttribute(Ec2Client ec2, Set<Ec2Instance> instances) {
         for(String extraAttribute: extraInstanceMappingAttributes){
             if(mappingHasExtraAttribute(extraAttribute)){
                 if(extraAttribute.equals("imageName")){
@@ -591,64 +689,65 @@ class InstanceToNodeMapper {
         return false;
     }
 
-    public Set<Instance> addingImageName(AmazonEC2 ec2, Set<Instance> originalInstances) {
-        Set<Instance> instances = new HashSet<>();
+    public Set<Ec2Instance> addingImageName(Ec2Client ec2, Set<Ec2Instance> originalInstances) {
         Map<String,Image> ec2Images = new HashMap<>();
-        Set<String> imagesList = originalInstances.stream().map(Instance::getImageId).collect(Collectors.toSet());
+        Set<String> imagesList = originalInstances.stream()
+                .map(i -> i.instance().imageId())
+                .collect(Collectors.toSet());
         logger.debug("Image list: {}", imagesList);
         try{
-            DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
-            describeImagesRequest.setImageIds(imagesList);
+            DescribeImagesRequest describeImagesRequest = DescribeImagesRequest.builder()
+                    .imageIds(imagesList)
+                    .build();
 
-            DescribeImagesResult result = ec2.describeImages(describeImagesRequest);
+            DescribeImagesResponse result = ec2.describeImages(describeImagesRequest);
 
-            for(Image image :result.getImages()){
-                ec2Images.put(image.getImageId(),image);
+            for(Image image :result.images()){
+                ec2Images.put(image.imageId(),image);
             }
         }catch(Exception e){
             logger.error("error getting image info{}", e.getMessage());
         }
 
-        for (final Instance inst : originalInstances) {
-            Ec2Instance customInstance = Ec2Instance.builder(inst);
-
-            if(ec2Images.containsKey(inst.getImageId())){
-                Image image = ec2Images.get(inst.getImageId());
-                customInstance.setImageName(image.getName());
+        for (final Ec2Instance inst : originalInstances) {
+            String imageId = inst.instance().imageId();
+            if(ec2Images.containsKey(imageId)){
+                Image image = ec2Images.get(imageId);
+                inst.setImageName(image.name());
             }else{
-                customInstance.setImageName("Not found");
-                logger.debug("Image not found" + inst.getImageId());
+                inst.setImageName("Not found");
+                logger.debug("Image not found" + imageId);
             }
-            instances.add(customInstance);
-
         }
 
-        return instances;
+        return originalInstances;
     }
 
-    public Set<Instance> addingRegion(Set<Instance> originalInstances){
-        Set<Instance> instances = new HashSet<>();
-
-        for (final Instance inst : originalInstances) {
-            String region = getRegionAvailableZone(inst.getPlacement().getAvailabilityZone());
-            Ec2Instance customInstance = Ec2Instance.builder(inst);
-
-            if(region!=null){
-                customInstance.setRegion(region);
+    public Set<Ec2Instance> addingRegion(Set<Ec2Instance> originalInstances){
+        for (final Ec2Instance inst : originalInstances) {
+            if (null == inst.instance().placement()) {
+                continue;
             }
-            instances.add(customInstance);
+            String region = getRegionAvailableZone(inst.instance().placement().availabilityZone());
+            if(region!=null){
+                inst.setRegion(region);
+            }
         }
 
-        return instances;
+        return originalInstances;
     }
 
     private String getRegionAvailableZone(String availableZone){
 
         String region = null;
 
-        for(AvailabilityZone zone : zones.getAvailabilityZones()) {
-            if (zone.getZoneName().equals(availableZone)){
-                region = zone.getRegionName();
+        if (null == zones || null == availableZone) {
+            return null;
+        }
+
+        for(AvailabilityZone zone : zones.availabilityZones()) {
+            if (zone.zoneName().equals(availableZone)){
+                region = zone.regionName();
             }
         }
 

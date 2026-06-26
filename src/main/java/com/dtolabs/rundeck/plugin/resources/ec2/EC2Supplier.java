@@ -1,31 +1,31 @@
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.services.ec2.AmazonEC2;
+import software.amazon.awssdk.services.ec2.Ec2Client;
 
 /**
- * Interface for supplying AmazonEC2 clients
+ * Interface for supplying Ec2Client instances
  */
 public interface EC2Supplier {
     /**
-     * Return an AmazonEC2 client for the default region
+     * Return an Ec2Client for the default region
      *
-     * @return AmazonEC2 client
+     * @return Ec2Client
      */
-    AmazonEC2 getEC2ForDefaultRegion();
+    Ec2Client getEC2ForDefaultRegion();
 
     /**
-     * Return an AmazonEC2 client for the specified region
+     * Return an Ec2Client for the specified region
      *
      * @param region region name
-     * @return AmazonEC2 client
+     * @return Ec2Client
      */
-    AmazonEC2 getEC2ForRegion(String region);
+    Ec2Client getEC2ForRegion(String region);
 
     /**
-     * Return an AmazonEC2 client for the specified endpoint
+     * Return an Ec2Client for the specified endpoint
      *
      * @param endpoint endpoint URL
-     * @return AmazonEC2 client
+     * @return Ec2Client
      */
-    AmazonEC2 getEC2ForEndpoint(String endpoint);
+    Ec2Client getEC2ForEndpoint(String endpoint);
 }

@@ -23,15 +23,20 @@
 */
 package com.dtolabs.rundeck.plugin.resources.ec2;
 
-import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.*;
-import com.amazonaws.regions.RegionUtils;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
-import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
-import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
-import com.amazonaws.services.securitytoken.model.Credentials;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
+import software.amazon.awssdk.http.apache.ProxyConfiguration;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.sts.StsClient;
+import software.amazon.awssdk.services.sts.StsClientBuilder;
+import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
+import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
+import software.amazon.awssdk.services.sts.model.Credentials;
 import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
@@ -44,6 +49,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Properties;
@@ -93,12 +99,11 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     final Properties mapping = new Properties();
     final String assumeRoleArn;
     final String assumeRoleArnCombinedWithExtId;
-    AWSCredentialsProvider awsCredentialsProvider;
 
     final String externalId;
     int pageResults;
 
-    ClientConfiguration clientConfiguration = new ClientConfiguration();
+    SdkHttpClient httpClient;
 
     INodeSet iNodeSet;
     static final Properties defaultMapping = new Properties();
@@ -211,12 +216,7 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
 
 
-        if (null != httpProxyHost && !"".equals(httpProxyHost)) {
-            this.clientConfiguration.setProxyHost(httpProxyHost);
-            this.clientConfiguration.setProxyPort(httpProxyPort);
-            this.clientConfiguration.setProxyUsername(httpProxyUser);
-            this.clientConfiguration.setProxyPassword(httpProxyPass);
-        }
+        this.httpClient = buildHttpClient();
 
         queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
 
@@ -236,24 +236,44 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     }
 
 
-    protected AWSCredentials createCredentials() {
+    /**
+     * Build a shared HTTP client, applying HTTP proxy configuration when supplied. The same client
+     * is reused for the EC2 clients and the STS client so proxy settings apply consistently.
+     */
+    private SdkHttpClient buildHttpClient() {
+        ApacheHttpClient.Builder builder = ApacheHttpClient.builder();
+        if (null != httpProxyHost && !"".equals(httpProxyHost)) {
+            ProxyConfiguration.Builder proxy = ProxyConfiguration.builder()
+                    .endpoint(URI.create("http://" + httpProxyHost + ":" + httpProxyPort));
+            if (null != httpProxyUser && !"".equals(httpProxyUser)) {
+                proxy.username(httpProxyUser);
+            }
+            if (null != httpProxyPass && !"".equals(httpProxyPass)) {
+                proxy.password(httpProxyPass);
+            }
+            builder.proxyConfiguration(proxy.build());
+        }
+        return builder.build();
+    }
+
+    protected AwsCredentials createCredentials() {
         if (null != accessKey && null != secretKeyStoragePath) {
             KeyStorageTree keyStorage = services.getService(KeyStorageTree.class);
             String secretKey = getPasswordFromKeyStorage(secretKeyStoragePath, keyStorage);
-            return new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
+            return AwsBasicCredentials.create(accessKey.trim(), secretKey.trim());
         } else if (null != accessKey && null != secretKey) {
-            return new BasicAWSCredentials(accessKey.trim(), secretKey.trim());
+            return AwsBasicCredentials.create(accessKey.trim(), secretKey.trim());
         }
 
-        AWSCredentials credentials = null;
+        AwsCredentials credentials = null;
         if (this.externalId != null && this.assumeRoleArnCombinedWithExtId != null) {
             credentials = createAwsCredentials(null, this.assumeRoleArnCombinedWithExtId, this.externalId);
         }
 
         if (assumeRoleArn != null) {
-            AWSCredentialsProvider provider = null;
+            AwsCredentialsProvider provider = null;
             if (credentials != null) {
-                provider = new AWSStaticCredentialsProvider(credentials);
+                provider = StaticCredentialsProvider.create(credentials);
             }
 
             return createAwsCredentials(provider, assumeRoleArn, null);
@@ -265,38 +285,37 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     private EC2SupplierImpl createEc2Supplier() {
         return new EC2SupplierImpl(
                 createCredentials(),
-                clientConfiguration,
+                httpClient,
                 // Use old default us-east-1 for AWS EC2, to maintain default behavior for existing configurations
-                RegionUtils.getRegion(Regions.US_EAST_1.getName())
+                Region.US_EAST_1
         );
     }
 
-    private AWSCredentials createAwsCredentials(AWSCredentialsProvider provider, String assumeRoleArn, String externalId) {
-        AWSSecurityTokenService sts_client;
+    private AwsCredentials createAwsCredentials(AwsCredentialsProvider provider, String assumeRoleArn, String externalId) {
+        StsClientBuilder stsBuilder = StsClient.builder()
+                .httpClient(httpClient)
+                // STS global endpoint, matching the v1 default behavior
+                .region(Region.AWS_GLOBAL);
 
         if (provider != null) {
-            sts_client = AWSSecurityTokenServiceClientBuilder.standard()
-                    .withCredentials(provider)
-                    .withClientConfiguration(clientConfiguration)
-                    .build();
-        } else {
-            sts_client = AWSSecurityTokenServiceClientBuilder.standard()
-                    .withClientConfiguration(clientConfiguration)
-                    .build();
+            stsBuilder.credentialsProvider(provider);
         }
-        AssumeRoleRequest assumeRoleRequest = new AssumeRoleRequest();
-        assumeRoleRequest.setRoleArn(assumeRoleArn);
-        if(externalId!=null){
-            assumeRoleRequest.setExternalId(externalId);
+
+        try (StsClient stsClient = stsBuilder.build()) {
+            AssumeRoleRequest.Builder requestBuilder = AssumeRoleRequest.builder()
+                    .roleArn(assumeRoleArn)
+                    .roleSessionName("RundeckEC2ResourceModelSourceSession");
+            if (externalId != null) {
+                requestBuilder.externalId(externalId);
+            }
+            AssumeRoleResponse assumeRoleResult = stsClient.assumeRole(requestBuilder.build());
+            Credentials assumeCredentials = assumeRoleResult.credentials();
+            return AwsSessionCredentials.create(
+                    assumeCredentials.accessKeyId(),
+                    assumeCredentials.secretAccessKey(),
+                    assumeCredentials.sessionToken()
+            );
         }
-        assumeRoleRequest.setRoleSessionName("RundeckEC2ResourceModelSourceSession");
-        AssumeRoleResult assumeRoleResult = sts_client.assumeRole(assumeRoleRequest);
-        Credentials assumeCredentials = assumeRoleResult.getCredentials();
-        return new BasicSessionCredentials(
-                assumeCredentials.getAccessKeyId(),
-                assumeCredentials.getSecretAccessKey(),
-                assumeCredentials.getSessionToken()
-        );
     }
 
     public synchronized INodeSet getNodes() throws ResourceModelSourceException {
