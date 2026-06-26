@@ -65,7 +65,6 @@ class InstanceToNodeMapper {
     private Properties mapping;
     private final int maxResults;
     private final EC2Supplier ec2Supplier;
-    private DescribeAvailabilityZonesResponse zones;
 
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
@@ -154,9 +153,9 @@ class InstanceToNodeMapper {
             Ec2Client ec2ForRegion = ec2Supplier.getEC2ForRegion(region);
 
 
-            zones = ec2ForRegion.describeAvailabilityZones();
+            DescribeAvailabilityZonesResponse zones = ec2ForRegion.describeAvailabilityZones();
 
-            final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request));
+            final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request), zones);
 
             if (newInstances != null && !newInstances.isEmpty()) {
                 instances.addAll(newInstances);
@@ -164,9 +163,9 @@ class InstanceToNodeMapper {
         }
         else{
             Ec2Client ec2 = ec2Supplier.getEC2ForDefaultRegion();
-            zones = ec2.describeAvailabilityZones();
+            DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
 
-            instances = addExtraMappingAttribute(ec2,query(ec2, request));
+            instances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
         }
         mapInstances(nodeSet, instances);
         return nodeSet;
@@ -196,7 +195,7 @@ class InstanceToNodeMapper {
     private Set<Ec2Instance> getInstancesByRegion(String endpoint) {
         Set<Ec2Instance> allInstances = new HashSet<>();
         Ec2Client ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
-        zones = ec2.describeAvailabilityZones();
+        DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
         final List<Filter> filters = buildFilters();
 
         DescribeInstancesRequest request = DescribeInstancesRequest.builder()
@@ -204,7 +203,7 @@ class InstanceToNodeMapper {
                 .maxResults(maxResults)
                 .build();
 
-        final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request));
+        final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
 
         if (newInstances != null && !newInstances.isEmpty()) {
             allInstances.addAll(newInstances);
@@ -570,9 +569,13 @@ class InstanceToNodeMapper {
     private static Method lookupAccessor(final Class<?> type, final String name) {
         try {
             final Method method = type.getMethod(name);
+            // Accept any no-arg, value-returning accessor so selectors can traverse the object
+            // graph (including JDK value types such as java.time.Instant), but reject methods
+            // declared on Object (toString/hashCode/getClass/wait/notify) so unknown selectors
+            // still fail as they did with the legacy BeanUtils resolution.
             if (method.getParameterCount() == 0
                     && method.getReturnType() != void.class
-                    && method.getDeclaringClass().getName().startsWith("software.amazon.awssdk")) {
+                    && !Object.class.equals(method.getDeclaringClass())) {
                 return method;
             }
         } catch (NoSuchMethodException ignored) {
@@ -662,14 +665,14 @@ class InstanceToNodeMapper {
         }
     }
 
-    public Set<Ec2Instance> addExtraMappingAttribute(Ec2Client ec2, Set<Ec2Instance> instances) {
+    public Set<Ec2Instance> addExtraMappingAttribute(Ec2Client ec2, Set<Ec2Instance> instances, DescribeAvailabilityZonesResponse zones) {
         for(String extraAttribute: extraInstanceMappingAttributes){
             if(mappingHasExtraAttribute(extraAttribute)){
                 if(extraAttribute.equals("imageName")){
                     instances = addingImageName(ec2, instances);
                 }
                 if(extraAttribute.equals("region")){
-                    instances = addingRegion(instances);
+                    instances = addingRegion(instances, zones);
                 }
             }
         }
@@ -706,7 +709,7 @@ class InstanceToNodeMapper {
                 ec2Images.put(image.imageId(),image);
             }
         }catch(Exception e){
-            logger.error("error getting image info{}", e.getMessage());
+            logger.error("error getting image info: {}", e.getMessage(), e);
         }
 
         for (final Ec2Instance inst : originalInstances) {
@@ -716,19 +719,19 @@ class InstanceToNodeMapper {
                 inst.setImageName(image.name());
             }else{
                 inst.setImageName("Not found");
-                logger.debug("Image not found" + imageId);
+                logger.debug("Image not found {}", imageId);
             }
         }
 
         return originalInstances;
     }
 
-    public Set<Ec2Instance> addingRegion(Set<Ec2Instance> originalInstances){
+    public Set<Ec2Instance> addingRegion(Set<Ec2Instance> originalInstances, DescribeAvailabilityZonesResponse zones){
         for (final Ec2Instance inst : originalInstances) {
             if (null == inst.instance().placement()) {
                 continue;
             }
-            String region = getRegionAvailableZone(inst.instance().placement().availabilityZone());
+            String region = getRegionAvailableZone(inst.instance().placement().availabilityZone(), zones);
             if(region!=null){
                 inst.setRegion(region);
             }
@@ -737,7 +740,7 @@ class InstanceToNodeMapper {
         return originalInstances;
     }
 
-    private String getRegionAvailableZone(String availableZone){
+    private String getRegionAvailableZone(String availableZone, DescribeAvailabilityZonesResponse zones){
 
         String region = null;
 
