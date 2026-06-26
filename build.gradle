@@ -73,23 +73,34 @@ dependencies {
     testImplementation(libs.rundeckCore) {
         exclude group: "com.google.guava"
     }
-    implementation libs.bundles.awsSdk
+
+    // AWS SDK v2 BOM manages module versions for the pluginLibs + compile classpath
+    implementation platform(libs.awsSdkBom)
+    pluginLibs platform(libs.awsSdkBom)
+
     implementation libs.jacksonDatabind
-    implementation libs.commonsBeanutils
-    
+
     // Add secure commons-lang3 to provide alternative to vulnerable commons-lang 2.6
     implementation(libs.commonsLang3)
 
+    // AWS SDK v2 modules bundled into the plugin lib/ dir. The Apache HTTP client (4.x) is
+    // bundled so HTTP proxy configuration keeps working and is set explicitly on every client,
+    // so the other default HTTP clients the service modules pull in (Netty async + Apache 5.x)
+    // are excluded to keep the plugin jar small. httpclient (4.x) must NOT be excluded because
+    // apache-client depends on it at runtime.
     pluginLibs(libs.awsSdkEc2) {
-        exclude group: "org.apache.httpcomponents", module: "httpclient"
         exclude group: "com.fasterxml.jackson.core"
         exclude group: "com.fasterxml.jackson.dataformat"
+        exclude group: "software.amazon.awssdk", module: "netty-nio-client"
+        exclude group: "software.amazon.awssdk", module: "apache5-client"
     }
     pluginLibs(libs.awsSdkSts) {
-        exclude group: "org.apache.httpcomponents", module: "httpclient"
         exclude group: "com.fasterxml.jackson.core"
         exclude group: "com.fasterxml.jackson.dataformat"
+        exclude group: "software.amazon.awssdk", module: "netty-nio-client"
+        exclude group: "software.amazon.awssdk", module: "apache5-client"
     }
+    pluginLibs libs.awsSdkApacheClient
 
     testImplementation libs.bundles.testLibs
 }

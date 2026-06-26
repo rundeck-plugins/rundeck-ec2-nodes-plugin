@@ -47,8 +47,8 @@ class EC2ResourceModelSourceSpec extends Specification {
         when: "we check the access keys of the resource model source objects"
         // Instead of using getNodes, which would all be highly mocked, just check that we got as far as setting
         // proper credentials right before the point we would call to AWS
-        def workingRmsPass = workingRms.createCredentials().getAWSSecretKey()
-        def failingRmsPass = failingRms.createCredentials().getAWSSecretKey()
+        def workingRmsPass = workingRms.createCredentials().secretAccessKey()
+        def failingRmsPass = failingRms.createCredentials().secretAccessKey()
 
         then: "we see that the proper keys from the key storage or the inline key have been derived"
         workingRmsPass == validSecretKey

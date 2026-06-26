@@ -1,20 +1,20 @@
 package com.dtolabs.rundeck.plugin.resources.ec2
 
 
-import com.amazonaws.services.ec2.AmazonEC2Client
-import com.amazonaws.services.ec2.model.AvailabilityZone
-import com.amazonaws.services.ec2.model.DescribeAvailabilityZonesResult
-import com.amazonaws.services.ec2.model.DescribeImagesResult
-import com.amazonaws.services.ec2.model.DescribeInstancesResult
-import com.amazonaws.services.ec2.model.DescribeRegionsResult
-import com.amazonaws.services.ec2.model.Image
-import com.amazonaws.services.ec2.model.Instance
-import com.amazonaws.services.ec2.model.InstanceState
-import com.amazonaws.services.ec2.model.InstanceStateName
-import com.amazonaws.services.ec2.model.Placement
-import com.amazonaws.services.ec2.model.Region
-import com.amazonaws.services.ec2.model.Reservation
-import com.amazonaws.services.ec2.model.Tag
+import software.amazon.awssdk.services.ec2.Ec2Client
+import software.amazon.awssdk.services.ec2.model.AvailabilityZone
+import software.amazon.awssdk.services.ec2.model.DescribeAvailabilityZonesResponse
+import software.amazon.awssdk.services.ec2.model.DescribeImagesResponse
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesResponse
+import software.amazon.awssdk.services.ec2.model.DescribeRegionsResponse
+import software.amazon.awssdk.services.ec2.model.Image
+import software.amazon.awssdk.services.ec2.model.Instance
+import software.amazon.awssdk.services.ec2.model.InstanceState
+import software.amazon.awssdk.services.ec2.model.InstanceStateName
+import software.amazon.awssdk.services.ec2.model.Placement
+import software.amazon.awssdk.services.ec2.model.Region
+import software.amazon.awssdk.services.ec2.model.Reservation
+import software.amazon.awssdk.services.ec2.model.Tag
 import spock.lang.Specification
 import spock.lang.Unroll
 
@@ -25,7 +25,7 @@ import spock.lang.Unroll
 class InstanceToNodeMapperSpec extends Specification {
     def "single selector valid properties"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
 
         when:
         def result = InstanceToNodeMapper.applySingleSelector(i, selector)
@@ -45,7 +45,7 @@ class InstanceToNodeMapperSpec extends Specification {
     @Unroll
     def "single selector invalid properties #selector"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
 
         when:
         def result = InstanceToNodeMapper.applySingleSelector(i, selector)
@@ -64,7 +64,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
     def "single selector tags"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
 
         when:
         def result = InstanceToNodeMapper.applySingleSelector(i, selector)
@@ -82,7 +82,7 @@ class InstanceToNodeMapperSpec extends Specification {
     @Unroll
     def "apply selector #selector"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
         when:
         def result = InstanceToNodeMapper.applySelector(i, selector, defVal)
         then:
@@ -100,7 +100,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
     def "apply selector multipart"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
         when:
         def result = InstanceToNodeMapper.applySelector(i, selector, defVal)
         then:
@@ -130,7 +130,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
     def "apply selector merged tags"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
         when:
         def result = InstanceToNodeMapper.applySelector(i, selector, defVal, true)
         then:
@@ -149,7 +149,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
     def "apply selector merged tags multi"() {
         given:
-        def i = mkInstance()
+        def i = Ec2Instance.builder(mkInstance())
         when:
         def result = InstanceToNodeMapper.applySelector(i, selector, defVal, true)
         then:
@@ -165,19 +165,13 @@ class InstanceToNodeMapperSpec extends Specification {
 
         Instance instance = mkInstance()
         Image image = mkImage()
-        Reservation reservertion = Mock(Reservation){
-            getInstances()>>[instance]
-        }
-        AmazonEC2Client ec2 = Mock(AmazonEC2Client){
-            describeInstances(_) >> Mock(DescribeInstancesResult){
-                getReservations() >> [reservertion]
-            }
-            describeImages(_) >> Mock(DescribeImagesResult){
-                getImages()>>[image]
-            }
-            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
-                getAvailabilityZones()>>[]
-            }
+        DescribeInstancesResponse instancesResponse = DescribeInstancesResponse.builder()
+                .reservations(Reservation.builder().instances(instance).build())
+                .build()
+        Ec2Client ec2 = Mock(Ec2Client){
+            describeInstances(_) >> instancesResponse
+            describeImages(_) >> DescribeImagesResponse.builder().images(image).build()
+            describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
         }
         EC2Supplier supplier = Mock(EC2Supplier) {
             0 * getEC2ForDefaultRegion()
@@ -208,20 +202,12 @@ class InstanceToNodeMapperSpec extends Specification {
         given:
 
         Instance instance = mkInstance()
-        Image image = mkImage()
-        Reservation reservertion = Mock(Reservation){
-            getInstances()>>[instance]
-        }
-        AmazonEC2Client ec2 = Mock(AmazonEC2Client){
-            describeInstances(_) >> Mock(DescribeInstancesResult){
-                getReservations() >> [reservertion]
-            }
-            describeImages(_) >> Mock(DescribeImagesResult){
-                getImages()>>[image]
-            }
-            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
-                getAvailabilityZones()>>[]
-            }
+        DescribeInstancesResponse instancesResponse = DescribeInstancesResponse.builder()
+                .reservations(Reservation.builder().instances(instance).build())
+                .build()
+        Ec2Client ec2 = Mock(Ec2Client){
+            describeInstances(_) >> instancesResponse
+            describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
         }
         EC2Supplier supplier = Mock(EC2Supplier) {
             0 * getEC2ForDefaultRegion()
@@ -245,24 +231,18 @@ class InstanceToNodeMapperSpec extends Specification {
 
         Instance instance = mkInstance()
         Image image = mkImage()
-        List<AvailabilityZone> zones = new ArrayList<>()
-        AvailabilityZone zone1 = new AvailabilityZone()
-        zone1.setRegionName(region)
-        zone1.setZoneName("us-east-1a")
+        AvailabilityZone zone1 = AvailabilityZone.builder()
+                .regionName(region)
+                .zoneName("us-east-1a")
+                .build()
 
-        Reservation reservertion = Mock(Reservation){
-            getInstances()>>[instance]
-        }
-        AmazonEC2Client ec2 = Mock(AmazonEC2Client){
-            describeInstances(_) >> Mock(DescribeInstancesResult){
-                getReservations() >> [reservertion]
-            }
-            describeImages(_) >> Mock(DescribeImagesResult){
-                getImages()>>[image]
-            }
-            describeAvailabilityZones()>>Mock(DescribeAvailabilityZonesResult){
-                getAvailabilityZones()>>[zone1]
-            }
+        DescribeInstancesResponse instancesResponse = DescribeInstancesResponse.builder()
+                .reservations(Reservation.builder().instances(instance).build())
+                .build()
+        Ec2Client ec2 = Mock(Ec2Client){
+            describeInstances(_) >> instancesResponse
+            describeImages(_) >> DescribeImagesResponse.builder().images(image).build()
+            describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().availabilityZones(zone1).build()
         }
 
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -294,25 +274,20 @@ class InstanceToNodeMapperSpec extends Specification {
 
         EC2Supplier supplier = Mock(EC2Supplier) {
             0 * getEC2ForDefaultRegion()
-            0 * getEC2ForRegion()
+            0 * getEC2ForRegion(_)
 
             _ * getEC2ForEndpoint({ it in endpoints }) >> { args ->
-                AvailabilityZone zone1 = new AvailabilityZone()
-                def region=regions[endpoints.indexOf(args[0])]
-                zone1.setRegionName(region)
-                zone1.setZoneName("${region}a")
-                Mock(AmazonEC2Client) {
-                    describeInstances(_) >> Mock(DescribeInstancesResult) {
-                        getReservations() >> [Mock(Reservation){
-                            getInstances()>>[mkInstance(region)]
-                        }]
-                    }
-                    describeImages(_) >> Mock(DescribeImagesResult) {
-                        getImages() >> [image]
-                    }
-                    describeAvailabilityZones() >> Mock(DescribeAvailabilityZonesResult) {
-                        getAvailabilityZones() >> [zone1]
-                    }
+                def region = regions[endpoints.indexOf(args[0])]
+                AvailabilityZone zone1 = AvailabilityZone.builder()
+                        .regionName(region)
+                        .zoneName("${region}a".toString())
+                        .build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(mkInstance(region)).build())
+                            .build()
+                    describeImages(_) >> DescribeImagesResponse.builder().images(image).build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().availabilityZones(zone1).build()
                 }
             }
 
@@ -343,35 +318,30 @@ class InstanceToNodeMapperSpec extends Specification {
         Image image = mkImage()
 
         EC2Supplier supplier = Mock(EC2Supplier) {
-            1 * getEC2ForDefaultRegion() >> Mock(AmazonEC2Client) {
-                1 * describeRegions() >> Mock(DescribeRegionsResult) {
-                    1 * getRegions() >> regions.collect({ region ->
-                        Mock(Region) {
-                            _ * getRegionName() >> region
-                            _ * getEndpoint() >> "https://ec2.${region}.amazonaws.com"
-                        }
-                    })
-                }
+            1 * getEC2ForDefaultRegion() >> Mock(Ec2Client) {
+                1 * describeRegions() >> DescribeRegionsResponse.builder()
+                        .regions(regions.collect({ r ->
+                            Region.builder()
+                                    .regionName(r)
+                                    .endpoint("https://ec2.${r}.amazonaws.com".toString())
+                                    .build()
+                        }))
+                        .build()
             }
-            0 * getEC2ForRegion()
+            0 * getEC2ForRegion(_)
 
             _ * getEC2ForEndpoint({ it in endpointsFound }) >> { args ->
-                AvailabilityZone zone1 = new AvailabilityZone()
-                def region=regions[endpointsFound.indexOf(args[0])]
-                zone1.setRegionName(region)
-                zone1.setZoneName("${region}a")
-                Mock(AmazonEC2Client) {
-                    describeInstances(_) >> Mock(DescribeInstancesResult) {
-                        getReservations() >> [Mock(Reservation){
-                            getInstances()>>[mkInstance(region)]
-                        }]
-                    }
-                    describeImages(_) >> Mock(DescribeImagesResult) {
-                        getImages() >> [image]
-                    }
-                    describeAvailabilityZones() >> Mock(DescribeAvailabilityZonesResult) {
-                        getAvailabilityZones() >> [zone1]
-                    }
+                def region = regions[endpointsFound.indexOf(args[0])]
+                AvailabilityZone zone1 = AvailabilityZone.builder()
+                        .regionName(region)
+                        .zoneName("${region}a".toString())
+                        .build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(mkInstance(region)).build())
+                            .build()
+                    describeImages(_) >> DescribeImagesResponse.builder().images(image).build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().availabilityZones(zone1).build()
                 }
             }
 
@@ -400,24 +370,24 @@ class InstanceToNodeMapperSpec extends Specification {
     // Private Methods
     //
     private static Instance mkInstance(String region='us-east-1') {
-        Instance i = new Instance()
-        i.withTags(new Tag('Name', 'bob'), new Tag('env', 'PROD'))
-        i.setInstanceId("aninstanceId")
-        i.setArchitecture("anarch")
-        i.setImageId("ami-something")
-        i.setPlacement(new Placement("${region}a"))
-
-        def state = new InstanceState()
-        state.setName(InstanceStateName.Running)
-        i.setState(state)
-        i.setPrivateIpAddress('127.0.9.9')
-        return i
+        return Instance.builder()
+                .tags(
+                        Tag.builder().key('Name').value('bob').build(),
+                        Tag.builder().key('env').value('PROD').build()
+                )
+                .instanceId("aninstanceId")
+                .architecture("anarch")
+                .imageId("ami-something")
+                .placement(Placement.builder().availabilityZone("${region}a".toString()).build())
+                .state(InstanceState.builder().name(InstanceStateName.RUNNING).build())
+                .privateIpAddress('127.0.9.9')
+                .build()
     }
 
     private static Image mkImage(){
-        Image image = new Image()
-        image.setImageId("ami-something")
-        image.setName("AMISomething")
-        return image
+        return Image.builder()
+                .imageId("ami-something")
+                .name("AMISomething")
+                .build()
     }
 }
