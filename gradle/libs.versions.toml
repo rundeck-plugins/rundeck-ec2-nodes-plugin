@@ -1,6 +1,6 @@
 [versions]
 axionRelease = "1.18.17"
-awsSdk = "2.46.17"
+awsSdk = "2.47.5"
 cglib = "3.3.0"
 groovy = "4.0.29"
 jacksonDatabind = "2.21.2"
