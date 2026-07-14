@@ -144,8 +144,8 @@ For purposes of the mapping definition, a `field selector` is either:
 * "tags/" followed by a Tag name, e.g. "tags/My Tag"
 * "tags/*" for use by the `attributes.selector` mapping
 
-Selectors use the Apache [BeanUtils](http://commons.apache.org/beanutils/) to extract a property value from the AWS API
-[Instance class](http://docs.amazonwebservices.com/AWSJavaSDK/latest/javadoc/com/amazonaws/services/ec2/model/Instance.html).
+Selectors extract a property value from the AWS EC2 API
+[Instance class](https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/services/ec2/model/Instance.html).
 This means you can use dot-separated fieldnames to traverse the object graph.
 E.g. "state.name" to specify the "name" field of the State property of the Instance.
 

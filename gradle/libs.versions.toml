@@ -1,6 +1,6 @@
 [versions]
 axionRelease = "1.21.2"
-awsSdk = "1.12.780"
+awsSdk = "2.47.5"
 cglib = "3.3.0"
 commonsBeanutils = "1.11.0"
 groovy = "4.0.32"
@@ -16,11 +16,11 @@ commonsLang3 = "3.20.0"
 [libraries]
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
 rundeckCore = { group = "org.rundeck", name = "rundeck-core", version.ref = "rundeckCore" }
-awsSdkCore = { group = "com.amazonaws", name = "aws-java-sdk-core", version.ref = "awsSdk" }
-awsSdkSts = { group = "com.amazonaws", name = "aws-java-sdk-sts", version.ref = "awsSdk" }
+awsSdkBom = { group = "software.amazon.awssdk", name = "bom", version.ref = "awsSdk" }
+awsSdkEc2 = { group = "software.amazon.awssdk", name = "ec2" }
+awsSdkSts = { group = "software.amazon.awssdk", name = "sts" }
+awsSdkApacheClient = { group = "software.amazon.awssdk", name = "apache-client" }
 jacksonDatabind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jacksonDatabind" }
-commonsBeanutils = { group = "commons-beanutils", name = "commons-beanutils", version.ref = "commonsBeanutils" }
-awsSdkEc2 = { group = "com.amazonaws", name = "aws-java-sdk-ec2", version.ref = "awsSdk" }
 groovyAll = { group = "org.apache.groovy", name = "groovy-all", version.ref = "groovy" }
 spockCore = { group = "org.spockframework", name = "spock-core", version.ref = "spock" }
 cglibNodep = { group = "cglib", name = "cglib-nodep", version.ref = "cglib" }
@@ -28,7 +28,6 @@ objenesis = { group = "org.objenesis", name = "objenesis", version.ref = "objene
 commonsLang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLang3" }
 
 [bundles]
-awsSdk = ["awsSdkCore", "awsSdkSts"]
 testLibs = ["groovyAll", "spockCore", "cglibNodep", "objenesis"]
 
 [plugins]
