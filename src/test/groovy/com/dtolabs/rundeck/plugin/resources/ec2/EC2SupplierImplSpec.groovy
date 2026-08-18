@@ -28,6 +28,8 @@ class EC2SupplierImplSpec extends Specification {
         noExceptionThrown()
         client != null
 
+        cleanup:
+        client?.close()
         where:
         endpoint << [
                 'ec2.us-west-1.amazonaws.com',           // bare hostname, as returned by AWS DescribeRegions (ALL_REGIONS)
