@@ -1,6 +1,6 @@
 [versions]
 axionRelease = "1.21.3"
-awsSdk = "2.52.1"
+awsSdk = "2.53.0"
 cglib = "3.3.0"
 commonsBeanutils = "1.11.0"
 groovy = "4.0.33"
