@@ -321,9 +321,11 @@ class InstanceToNodeMapperSpec extends Specification {
             1 * getEC2ForDefaultRegion() >> Mock(Ec2Client) {
                 1 * describeRegions() >> DescribeRegionsResponse.builder()
                         .regions(regions.collect({ r ->
+                            // Real AWS DescribeRegions responses return a bare hostname with no
+                            // URI scheme (e.g. "ec2.us-west-1.amazonaws.com"), not a full URL.
                             Region.builder()
                                     .regionName(r)
-                                    .endpoint("https://ec2.${r}.amazonaws.com".toString())
+                                    .endpoint("ec2.${r}.amazonaws.com".toString())
                                     .build()
                         }))
                         .build()
@@ -362,7 +364,7 @@ class InstanceToNodeMapperSpec extends Specification {
 
         where:
         endpoint       | endpointsFound|regions
-        'ALL_REGIONS' | ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']|['us-west-1', 'us-east-1']
+        'ALL_REGIONS' | ['ec2.us-west-1.amazonaws.com', 'ec2.us-east-1.amazonaws.com']|['us-west-1', 'us-east-1']
 
     }
 

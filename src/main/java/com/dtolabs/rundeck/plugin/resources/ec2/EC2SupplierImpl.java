@@ -54,14 +54,24 @@ public class EC2SupplierImpl implements EC2Supplier {
         if (null == endpoint) {
             return getEC2ForDefaultRegion();
         }
+        // AWS's DescribeRegions API (used by the ALL_REGIONS endpoint option) returns bare
+        // hostnames with no URI scheme (e.g. "ec2.us-west-1.amazonaws.com"). URI.create() does
+        // not reject that, but AWS SDK v2's endpointOverride() requires a scheme, so normalize
+        // before it's used for both region derivation and the client endpoint override.
+        String normalizedEndpoint = normalizeEndpoint(endpoint);
         // AWS SDK v2 requires a signing region even when overriding the endpoint, so derive
         // it from the endpoint host (e.g. https://ec2.us-west-1.amazonaws.com -> us-west-1).
-        Region signingRegion = regionFromEndpoint(endpoint);
+        Region signingRegion = regionFromEndpoint(normalizedEndpoint);
         Ec2ClientBuilder builder = Ec2Client.builder()
                 .region(signingRegion)
-                .endpointOverride(URI.create(endpoint));
+                .endpointOverride(URI.create(normalizedEndpoint));
         applyCommon(builder);
         return builder.build();
+    }
+
+    private static String normalizeEndpoint(String endpoint) {
+        String trimmed = endpoint.trim();
+        return trimmed.matches("^[a-zA-Z][a-zA-Z0-9+\\-.]*://.*") ? trimmed : "https://" + trimmed;
     }
 
     private void applyCommon(Ec2ClientBuilder builder) {
