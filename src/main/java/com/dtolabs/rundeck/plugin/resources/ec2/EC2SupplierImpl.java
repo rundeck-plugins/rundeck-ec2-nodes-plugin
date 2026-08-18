@@ -70,7 +70,8 @@ public class EC2SupplierImpl implements EC2Supplier {
     }
 
     private static String normalizeEndpoint(String endpoint) {
-        return endpoint.contains("://") ? endpoint : "https://" + endpoint;
+        String trimmed = endpoint.trim();
+        return trimmed.matches("^[a-zA-Z][a-zA-Z0-9+\\-.]*://.*") ? trimmed : "https://" + trimmed;
     }
 
     private void applyCommon(Ec2ClientBuilder builder) {
