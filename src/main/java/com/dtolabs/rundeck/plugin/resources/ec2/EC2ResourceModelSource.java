@@ -173,7 +173,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         }
     }
 
-    public EC2ResourceModelSource(final Properties configuration, final Services services) {
+    public EC2ResourceModelSource(final Properties configuration, final Services services) throws ConfigurationException {
         this.services = services;
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
@@ -189,6 +189,15 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         this.assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
         this.assumeRoleArnCombinedWithExtId = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN_COMBINED_WITH_EXT_ID);
         this.externalId = configuration.getProperty(EC2ResourceModelSourceFactory.EXTERNAL_ID);
+
+        // Validate before allocating anything below (HTTP client, background executor, and any
+        // credentials/STS calls made while building the EC2 supplier). The factory also calls
+        // validate() separately after construction succeeds, but by then this object already holds
+        // resources that only its own close() releases -- and a discarded, never-returned instance
+        // can never have close() called on it by anything else. Failing fast here, before any of
+        // that is allocated, means there is nothing to clean up for this particular misconfiguration.
+        validate();
+
         int proxyPort = 80;
 
         final String proxyPortStr = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PORT);
@@ -230,23 +239,32 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         }
 
 
-        this.httpClient = buildHttpClient();
+        try {
+            this.httpClient = buildHttpClient();
 
-        queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
+            queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
 
-        this.queryNodeInstancesInParallel = Boolean.parseBoolean(configuration.getProperty(EC2ResourceModelSourceFactory.QUERY_NODE_INSTANCES_IN_PARALLEL, "false"));
+            this.queryNodeInstancesInParallel = Boolean.parseBoolean(configuration.getProperty(EC2ResourceModelSourceFactory.QUERY_NODE_INSTANCES_IN_PARALLEL, "false"));
 
-        final ArrayList<String> params = new ArrayList<String>();
-        if (null != filterParams) {
-            Collections.addAll(params, filterParams.split(";"));
+            final ArrayList<String> params = new ArrayList<String>();
+            if (null != filterParams) {
+                Collections.addAll(params, filterParams.split(";"));
+            }
+            loadMapping();
+
+            // createEc2Supplier() resolves credentials, which for an assumed role makes a real STS
+            // AssumeRole call -- if that (or anything else below) throws, this partially-initialized
+            // instance is never returned to any caller, so close() must be called here to release the
+            // HTTP client (and executor) already allocated above; otherwise nothing else ever would.
+            mapper = new InstanceToNodeMapper(createEc2Supplier(), mapping, pageResults);
+            mapper.setFilterParams(params);
+            mapper.setEndpoint(endpoint);
+            mapper.setRegion(region);
+            mapper.setRunningStateOnly(runningOnly);
+        } catch (RuntimeException e) {
+            close();
+            throw e;
         }
-        loadMapping();
-
-        mapper = new InstanceToNodeMapper(createEc2Supplier(), mapping, pageResults);
-        mapper.setFilterParams(params);
-        mapper.setEndpoint(endpoint);
-        mapper.setRegion(region);
-        mapper.setRunningStateOnly(runningOnly);
     }
 
 
@@ -405,8 +423,10 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                 Throwable cause = null != e.getCause() ? e.getCause() : e;
                 logger.warn("Error performing query: " + cause.getMessage(), e);
                 // surface the failure via ResourceModelSourceErrors instead of silently continuing
-                // to serve the last cached result set forever with no indication anything is wrong
-                lastQueryError = cause.getMessage();
+                // to serve the last cached result set forever with no indication anything is wrong.
+                // Fall back to toString() when the cause has no message (e.g. a bare
+                // RuntimeException()), so a real failure never leaves lastQueryError null.
+                lastQueryError = null != cause.getMessage() ? cause.getMessage() : cause.toString();
             } finally {
                 // Stamp completion time here (success or failure) so the configured refresh interval
                 // is honored as a true cooldown after the query actually finishes, instead of being

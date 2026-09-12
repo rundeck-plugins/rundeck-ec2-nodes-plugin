@@ -3,12 +3,78 @@ package com.dtolabs.rundeck.plugin.resources.ec2
 import com.dtolabs.rundeck.core.common.Framework
 import com.dtolabs.rundeck.core.common.IRundeckProject
 import com.dtolabs.rundeck.core.common.ProjectManager
+import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException
 import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree
 import org.rundeck.app.spi.Services
 import org.rundeck.storage.api.StorageException
 import spock.lang.Specification
 
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Future
+
 class EC2ResourceModelSourceSpec extends Specification {
+
+    def "getModelSourceErrors surfaces a failed async refresh even when the exception has no message"() {
+        given: "a constructed source with a background refresh that already completed with a message-less exception"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.futureResult = Mock(Future) {
+            isDone() >> true
+            get() >> { throw new ExecutionException(new RuntimeException()) }
+        }
+        // avoid needsRefresh() triggering another (real) query attempt once checkFuture() completes
+        rms.lastRefresh = System.currentTimeMillis()
+
+        when: "getNodes() runs checkFuture() and observes the failed future"
+        rms.getNodes()
+
+        then:
+        def errors = rms.getModelSourceErrors()
+        errors.size() == 1
+        errors[0] != null
+        !errors[0].isEmpty()
+    }
+
+    def "constructor validates configuration before allocating resources or contacting Services"() {
+        given: "an access key configured without its secret key or storage path -- invalid per validate()"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        def services = Mock(Services)
+
+        when:
+        ec2ResourceModelSource(services, config)
+
+        then:
+        ConfigurationException ex = thrown()
+        ex.message.contains("secretKey is required")
+        // proves construction failed before any credential/key-storage resolution was attempted,
+        // i.e. before the HTTP client or background executor would otherwise have been allocated
+        0 * services._
+    }
+
+    def "close() releases resources when construction fails after the HTTP client has been allocated"() {
+        given: "a key storage lookup that fails, so createCredentials() throws from within the constructor"
+        RecordingEC2ResourceModelSource.closeCalled = false
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH, "keys/missing")
+        def services = Mock(Services) {
+            getService(KeyStorageTree.class) >> Mock(KeyStorageTree) {
+                readPassword("keys/missing") >> { throw new IOException("not found") }
+            }
+        }
+
+        when:
+        new RecordingEC2ResourceModelSource(config, services)
+
+        then:
+        thrown(StorageException)
+        RecordingEC2ResourceModelSource.closeCalled
+    }
+
     def "user configured access credentials prefer key storage"() {
         given: "a user's plugin config"
         //Define good and bad keys and paths
@@ -119,5 +185,25 @@ class EC2ResourceModelSourceSpec extends Specification {
             getService(KeyStorageTree.class) >> storageTree
         }
 
+    }
+}
+
+/**
+ * Records whether {@link EC2ResourceModelSource#close()} was invoked, including when it is called
+ * from within the base class's own constructor after a construction failure -- close() is not
+ * private/final, so the override below is still reached via virtual dispatch even though "this"
+ * never escapes as a usable reference once the constructor throws.
+ */
+class RecordingEC2ResourceModelSource extends EC2ResourceModelSource {
+    static boolean closeCalled = false
+
+    RecordingEC2ResourceModelSource(Properties configuration, Services services) throws ConfigurationException {
+        super(configuration, services)
+    }
+
+    @Override
+    void close() {
+        closeCalled = true
+        super.close()
     }
 }
