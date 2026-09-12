@@ -40,6 +40,7 @@ import software.amazon.awssdk.services.sts.model.Credentials;
 import com.dtolabs.rundeck.core.common.INodeSet;
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
+import com.dtolabs.rundeck.core.resources.ResourceModelSourceErrors;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
 import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree;
 import org.rundeck.app.spi.Services;
@@ -52,11 +53,13 @@ import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD;
 
@@ -74,7 +77,7 @@ import static com.dtolabs.rundeck.plugin.resources.ec2.EC2ResourceModelSourceFac
  * </p>
  * @author Greg Schueler <a href="mailto:greg@rundeck.com">greg@rundeck.com</a>
  */
-public class EC2ResourceModelSource implements ResourceModelSource {
+public class EC2ResourceModelSource implements ResourceModelSource, ResourceModelSourceErrors, Closeable {
     static  Logger logger = LoggerFactory.getLogger(EC2ResourceModelSource.class);
     private String accessKey;
     private String secretKey;
@@ -110,6 +113,13 @@ public class EC2ResourceModelSource implements ResourceModelSource {
     InstanceToNodeMapper mapper;
 
     ExecutorService executor = Executors.newFixedThreadPool(1);
+
+    /**
+     * Message from the most recent failed background (async) refresh, or null if the last refresh
+     * succeeded. Exposed via {@link #getModelSourceErrors()} so a stale node cache resulting from
+     * repeated background failures (e.g. expired credentials) is surfaced instead of failing silently.
+     */
+    private volatile String lastQueryError;
 
     static {
         final String mapping = "nodename.selector=tags/Name,instanceId\n"
@@ -163,18 +173,31 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
     }
 
-    public EC2ResourceModelSource(final Properties configuration, final Services services) {
+    public EC2ResourceModelSource(final Properties configuration, final Services services) throws ConfigurationException {
         this.services = services;
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
         this.region = configuration.getProperty(EC2ResourceModelSourceFactory.REGION);
         this.secretKeyStoragePath = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH);
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
-        this.pageResults = Integer.parseInt(configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS));
+        this.pageResults = parseIntOrDefault(
+                configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS),
+                100,
+                EC2ResourceModelSourceFactory.MAX_RESULTS
+        );
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
         this.assumeRoleArn = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN);
         this.assumeRoleArnCombinedWithExtId = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN_COMBINED_WITH_EXT_ID);
         this.externalId = configuration.getProperty(EC2ResourceModelSourceFactory.EXTERNAL_ID);
+
+        // Validate before allocating anything below (HTTP client, background executor, and any
+        // credentials/STS calls made while building the EC2 supplier). The factory also calls
+        // validate() separately after construction succeeds, but by then this object already holds
+        // resources that only its own close() releases -- and a discarded, never-returned instance
+        // can never have close() called on it by anything else. Failing fast here, before any of
+        // that is allocated, means there is nothing to clean up for this particular misconfiguration.
+        validate();
+
         int proxyPort = 80;
 
         final String proxyPortStr = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_PORT);
@@ -216,25 +239,51 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }
 
 
-        this.httpClient = buildHttpClient();
+        try {
+            this.httpClient = buildHttpClient();
 
-        queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
+            queryAsync = !("true".equals(configuration.getProperty(SYNCHRONOUS_LOAD)) || refreshInterval <= 0);
 
-        this.queryNodeInstancesInParallel = Boolean.parseBoolean(configuration.getProperty(EC2ResourceModelSourceFactory.QUERY_NODE_INSTANCES_IN_PARALLEL, "false"));
+            this.queryNodeInstancesInParallel = Boolean.parseBoolean(configuration.getProperty(EC2ResourceModelSourceFactory.QUERY_NODE_INSTANCES_IN_PARALLEL, "false"));
 
-        final ArrayList<String> params = new ArrayList<String>();
-        if (null != filterParams) {
-            Collections.addAll(params, filterParams.split(";"));
+            final ArrayList<String> params = new ArrayList<String>();
+            if (null != filterParams) {
+                Collections.addAll(params, filterParams.split(";"));
+            }
+            loadMapping();
+
+            // createEc2Supplier() resolves credentials, which for an assumed role makes a real STS
+            // AssumeRole call -- if that (or anything else below) throws, this partially-initialized
+            // instance is never returned to any caller, so close() must be called here to release the
+            // HTTP client (and executor) already allocated above; otherwise nothing else ever would.
+            mapper = new InstanceToNodeMapper(createEc2Supplier(), mapping, pageResults);
+            mapper.setFilterParams(params);
+            mapper.setEndpoint(endpoint);
+            mapper.setRegion(region);
+            mapper.setRunningStateOnly(runningOnly);
+        } catch (RuntimeException e) {
+            close();
+            throw e;
         }
-        loadMapping();
-
-        mapper = new InstanceToNodeMapper(createEc2Supplier(), mapping, pageResults);
-        mapper.setFilterParams(params);
-        mapper.setEndpoint(endpoint);
-        mapper.setRegion(region);
-        mapper.setRunningStateOnly(runningOnly);
     }
 
+
+    /**
+     * Parse an integer property, falling back to a default and logging a warning if it is missing,
+     * blank, or not a valid integer, rather than letting a raw {@link NumberFormatException} escape
+     * from the constructor.
+     */
+    private static int parseIntOrDefault(String value, int defaultValue, String propName) {
+        if (null == value || "".equals(value)) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            logger.warn(propName + " value is not valid: " + value);
+            return defaultValue;
+        }
+    }
 
     /**
      * Build a shared HTTP client, applying HTTP proxy configuration when supplied. The same client
@@ -334,18 +383,25 @@ public class EC2ResourceModelSource implements ResourceModelSource {
          * If queryAync is false(default now) or this is the first fetch we just block here.
          */
         if (lastRefresh > 0 && queryAsync && null == futureResult) {
+            // lastRefresh is intentionally NOT stamped here: it is stamped in checkFuture() once the
+            // query actually completes. Stamping it at submission time would let a query that runs
+            // longer than refreshInterval be immediately followed by another one back-to-back, with
+            // none of the configured cooldown actually elapsing between queries.
             futureResult = executor.submit(() -> {
                 return mapper.performQuery(queryNodeInstancesInParallel);
             });
-            lastRefresh = System.currentTimeMillis();
+            logger.debug("Started background EC2 node refresh");
         } else if (!queryAsync || lastRefresh < 1) {
             //always perform synchronous query the first time
             iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
             lastRefresh = System.currentTimeMillis();
-        }
-
-        if (null != iNodeSet) {
-            logger.info("Read " + iNodeSet.getNodeNames().size() + " nodes from EC2");
+            if (null != iNodeSet) {
+                logger.info("Read " + iNodeSet.getNodeNames().size() + " nodes from EC2");
+            }
+        } else {
+            // queryAsync is true and a previous refresh is still in flight (futureResult != null):
+            // skip starting another one until it completes, rather than overlapping refreshes.
+            logger.debug("Skipping EC2 node refresh: a previous background query is still in progress");
         }
 
         return iNodeSet;
@@ -358,13 +414,39 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         if (null != futureResult && futureResult.isDone()) {
             try {
                 iNodeSet = futureResult.get();
+                // a successful refresh clears any previously reported error
+                lastQueryError = null;
             } catch (InterruptedException e) {
-                logger.debug("Interrupted",e);
+                logger.debug("Interrupted", e);
+                Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
-                logger.warn("Error performing query: " + e.getMessage(), e);
+                Throwable cause = null != e.getCause() ? e.getCause() : e;
+                logger.warn("Error performing query: " + cause.getMessage(), e);
+                // surface the failure via ResourceModelSourceErrors instead of silently continuing
+                // to serve the last cached result set forever with no indication anything is wrong.
+                // Fall back to toString() when the cause has no message (e.g. a bare
+                // RuntimeException()), so a real failure never leaves lastQueryError null.
+                lastQueryError = null != cause.getMessage() ? cause.getMessage() : cause.toString();
+            } finally {
+                // Stamp completion time here (success or failure) so the configured refresh interval
+                // is honored as a true cooldown after the query actually finishes, instead of being
+                // measured from submission time (which would let an overrunning query be immediately
+                // followed by another, and would busy-retry a persistently failing query every poll).
+                lastRefresh = System.currentTimeMillis();
+                futureResult = null;
             }
-            futureResult = null;
         }
+    }
+
+    /**
+     * @return the error from the most recent failed background refresh, if any, so that repeated
+     * async failures (e.g. expired/invalid credentials) are not swallowed silently while stale
+     * cached nodes continue to be served.
+     */
+    @Override
+    public List<String> getModelSourceErrors() {
+        String error = lastQueryError;
+        return null != error ? Collections.singletonList(error) : Collections.emptyList();
     }
 
     /**
@@ -418,9 +500,31 @@ public class EC2ResourceModelSource implements ResourceModelSource {
         }catch (Exception e){
             throw StorageException.readException(
                     PathUtil.asPath(path),
-                    "error accessing key storage at " + path + ": " + e.getMessage()
+                    "error accessing key storage at " + path + ": " + e.getMessage(),
+                    e
             );
         }
 
+    }
+
+    /**
+     * Release the background refresh thread pool and the shared HTTP client. Rundeck core closes any
+     * {@link ResourceModelSource} that implements {@link Closeable} when the source is unloaded (e.g.
+     * on project config reload), so without this override each reload of this node source would
+     * permanently leak a live thread and an HTTP connection pool.
+     */
+    @Override
+    public void close() {
+        executor.shutdownNow();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                logger.warn("EC2 node source background refresh thread did not terminate promptly on close");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (null != httpClient) {
+            httpClient.close();
+        }
     }
 }

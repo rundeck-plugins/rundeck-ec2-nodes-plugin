@@ -150,22 +150,25 @@ class InstanceToNodeMapper {
             }
         }
         else if(region != null){
-            Ec2Client ec2ForRegion = ec2Supplier.getEC2ForRegion(region);
+            // Each per-query Ec2Client is closed once used: it does not own the shared HTTP client
+            // (that is owned and closed separately by EC2ResourceModelSource), but leaving these open
+            // would otherwise leak an Ec2Client (and its internal resources) on every refresh cycle.
+            try (Ec2Client ec2ForRegion = ec2Supplier.getEC2ForRegion(region)) {
+                DescribeAvailabilityZonesResponse zones = ec2ForRegion.describeAvailabilityZones();
 
+                final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request), zones);
 
-            DescribeAvailabilityZonesResponse zones = ec2ForRegion.describeAvailabilityZones();
-
-            final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2ForRegion, query(ec2ForRegion, request), zones);
-
-            if (newInstances != null && !newInstances.isEmpty()) {
-                instances.addAll(newInstances);
+                if (newInstances != null && !newInstances.isEmpty()) {
+                    instances.addAll(newInstances);
+                }
             }
         }
         else{
-            Ec2Client ec2 = ec2Supplier.getEC2ForDefaultRegion();
-            DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
+            try (Ec2Client ec2 = ec2Supplier.getEC2ForDefaultRegion()) {
+                DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
 
-            instances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
+                instances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
+            }
         }
         mapInstances(nodeSet, instances);
         return nodeSet;
@@ -176,9 +179,11 @@ class InstanceToNodeMapper {
         if (getEndpoint().equals("ALL_REGIONS")) {
 
             //Retrieve dynamic list of EC2 regions from AWS
-            DescribeRegionsResponse regionsResult = ec2Supplier.getEC2ForDefaultRegion().describeRegions();
-            for (Region region : regionsResult.regions()) {
-                endpoints.add(region.endpoint());
+            try (Ec2Client ec2 = ec2Supplier.getEC2ForDefaultRegion()) {
+                DescribeRegionsResponse regionsResult = ec2.describeRegions();
+                for (Region region : regionsResult.regions()) {
+                    endpoints.add(region.endpoint());
+                }
             }
 
         } else {
@@ -194,19 +199,20 @@ class InstanceToNodeMapper {
 
     private Set<Ec2Instance> getInstancesByRegion(String endpoint) {
         Set<Ec2Instance> allInstances = new HashSet<>();
-        Ec2Client ec2 = ec2Supplier.getEC2ForEndpoint(endpoint);
-        DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
-        final List<Filter> filters = buildFilters();
+        try (Ec2Client ec2 = ec2Supplier.getEC2ForEndpoint(endpoint)) {
+            DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
+            final List<Filter> filters = buildFilters();
 
-        DescribeInstancesRequest request = DescribeInstancesRequest.builder()
-                .filters(filters)
-                .maxResults(maxResults)
-                .build();
+            DescribeInstancesRequest request = DescribeInstancesRequest.builder()
+                    .filters(filters)
+                    .maxResults(maxResults)
+                    .build();
 
-        final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
+            final Set<Ec2Instance> newInstances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
 
-        if (newInstances != null && !newInstances.isEmpty()) {
-            allInstances.addAll(newInstances);
+            if (newInstances != null && !newInstances.isEmpty()) {
+                allInstances.addAll(newInstances);
+            }
         }
 
         return allInstances;
