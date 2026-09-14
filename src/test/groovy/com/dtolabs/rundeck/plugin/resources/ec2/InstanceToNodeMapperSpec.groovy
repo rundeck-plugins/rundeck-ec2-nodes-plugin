@@ -376,11 +376,14 @@ class InstanceToNodeMapperSpec extends Specification {
 
         when: "the query is started, then interrupted once we know it's genuinely blocked inside a region call"
         queryThread.start()
-        startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
         queryThread.interrupt()
         queryThread.join(5000)
 
-        then: "the interrupted query thread actually finishes -- it doesn't hang waiting on the stuck region call or on a leaked inner thread pool that never shuts down"
+        then: "the region call was actually reached before interrupting -- otherwise interrupting an arbitrary earlier point wouldn't exercise the inner-pool cancellation path this test targets, and could pass without meaning anything"
+        reachedBlockedRegionCall
+
+        and: "the interrupted query thread actually finishes -- it doesn't hang waiting on the stuck region call or on a leaked inner thread pool that never shuts down"
         !queryThread.isAlive()
         caught != null
 
