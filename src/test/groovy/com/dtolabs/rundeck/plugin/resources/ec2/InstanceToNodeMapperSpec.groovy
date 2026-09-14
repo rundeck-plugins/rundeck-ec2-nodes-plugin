@@ -322,9 +322,12 @@ class InstanceToNodeMapperSpec extends Specification {
             0 * getEC2ForRegion(_)
             _ * getEC2ForEndpoint({ it in endpoints }) >> { args ->
                 def region = regions[endpoints.indexOf(args[0])]
+                def instance = mkInstance(region).toBuilder()
+                        .instanceId("aninstanceId-${region}".toString())
+                        .build()
                 Mock(Ec2Client) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
-                            .reservations(Reservation.builder().instances(mkInstance(region)).build())
+                            .reservations(Reservation.builder().instances(instance).build())
                             .build()
                     describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
                 }
@@ -338,8 +341,9 @@ class InstanceToNodeMapperSpec extends Specification {
 
         then: "both regions' instances are present, exactly as they would be querying sequentially"
         instances != null
-        instances.getNodeNames().size() == 1
-        instances.getNode("aninstanceId") != null
+        instances.getNodeNames().size() == 2
+        instances.getNode("aninstanceId-us-west-1") != null
+        instances.getNode("aninstanceId-us-east-1") != null
     }
 
     def "parallel query still terminates promptly, without leaking its inner thread pool, when interrupted mid-flight"() {
