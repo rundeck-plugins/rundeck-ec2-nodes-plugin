@@ -407,7 +407,22 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             // back-to-back, with none of the configured cooldown actually elapsing between queries.
             futureResult = executor.submit(() -> {
                 try {
-                    return mapper.performQuery(queryNodeInstancesInParallel);
+                    INodeSet result = mapper.performQuery(queryNodeInstancesInParallel);
+                    // Cleared here, at actual completion time -- see the catch block below for why.
+                    lastQueryError = null;
+                    return result;
+                } catch (Exception e) {
+                    String message = e.getMessage();
+                    logger.warn("Error performing query: " + message, e);
+                    // Recorded here, on the background thread, at actual completion time, rather than
+                    // relying on a later getNodes() call to notice via checkFuture(): otherwise
+                    // getModelSourceErrors() could keep returning a stale (or empty) value
+                    // indefinitely if node polling pauses or stops after this point, since nothing
+                    // else would ever run checkFuture() to notice the failure. Falls back to
+                    // toString() when the exception has no usable message -- either null or blank --
+                    // so a real failure never leaves lastQueryError null or empty.
+                    lastQueryError = (null != message && !message.isEmpty()) ? message : e.toString();
+                    throw e;
                 } finally {
                     // Stamped here, on the background thread, at actual completion time -- not by a
                     // later getNodes() call merely observing that the future is done in checkFuture().
@@ -440,25 +455,17 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         if (null != futureResult && futureResult.isDone()) {
             try {
                 iNodeSet = futureResult.get();
-                // a successful refresh clears any previously reported error
-                lastQueryError = null;
             } catch (InterruptedException e) {
                 logger.debug("Interrupted", e);
                 Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
-                Throwable cause = null != e.getCause() ? e.getCause() : e;
-                String message = cause.getMessage();
-                logger.warn("Error performing query: " + message, e);
-                // surface the failure via ResourceModelSourceErrors instead of silently continuing
-                // to serve the last cached result set forever with no indication anything is wrong.
-                // Fall back to toString() when the cause has no usable message -- either null (e.g. a
-                // bare RuntimeException()) or blank -- so a real failure never leaves lastQueryError
-                // null or empty, either of which would make the failure invisible to callers.
-                lastQueryError = (null != message && !message.isEmpty()) ? message : cause.toString();
+                // lastQueryError and lastRefresh were already recorded by the submitted task itself
+                // (see getNodes()) at actual completion time -- not here, since this method only runs
+                // when a later getNodes() call happens to notice the future is done, which could be
+                // arbitrarily long after the background query actually failed (or never happen again).
+                // iNodeSet is intentionally left as the last successfully cached result set rather
+                // than cleared, so stale nodes keep being served alongside the now-visible error.
             } finally {
-                // lastRefresh is intentionally NOT stamped here: for the async path it is already
-                // stamped by the submitted task itself (see getNodes()) at actual completion time,
-                // not at the later, arbitrary moment a poll happens to observe the future is done.
                 futureResult = null;
             }
         }

@@ -11,30 +11,32 @@ import org.rundeck.storage.api.StorageException
 import spock.lang.Specification
 import spock.lang.Unroll
 
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Future
-
 class EC2ResourceModelSourceSpec extends Specification {
 
     @Unroll
-    def "getModelSourceErrors surfaces a failed async refresh even when the exception has #description message"() {
-        given: "a constructed source with a background refresh that already completed with a #description-message exception"
+    def "getModelSourceErrors reflects a failed background refresh as soon as it completes, with no further getNodes() call, even when the exception has #description message"() {
+        given: "a constructed source whose mapper will fail the next query with a #description-message exception"
         def config = createDefaultConfig()
         config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
         config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
         config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
         EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
-        rms.futureResult = Mock(Future) {
-            isDone() >> true
-            get() >> { throw new ExecutionException(cause) }
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw cause }
         }
-        // avoid needsRefresh() triggering another (real) query attempt once checkFuture() completes
-        rms.lastRefresh = System.currentTimeMillis()
+        // simulate an already-completed prior refresh so the next getNodes() call takes the async
+        // (background executor) path rather than the synchronous first-fetch path
+        rms.lastRefresh = 1L
 
-        when: "getNodes() runs checkFuture() and observes the failed future"
+        when: "getNodes() submits the background query; we only wait for that submitted task itself to finish, not for another getNodes() call"
         rms.getNodes()
+        try {
+            rms.futureResult.get()
+        } catch (Exception ignored) {
+            // expected: the task is expected to fail; get() here is only used to block until it's done
+        }
 
-        then: "a real exception.toString() fallback is used instead of a blank/null error going unreported"
+        then: "the failure is already visible via getModelSourceErrors(), with no additional getNodes()/checkFuture() call involved"
         def errors = rms.getModelSourceErrors()
         errors.size() == 1
         errors[0] != null
