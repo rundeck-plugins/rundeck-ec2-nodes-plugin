@@ -85,7 +85,20 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     }
 
     public ResourceModelSource createResourceModelSource(Services services, final Properties configuration) throws ConfigurationException {
-        final EC2ResourceModelSource ec2ResourceModelSource = new EC2ResourceModelSource(configuration, services);
+        final EC2ResourceModelSource ec2ResourceModelSource;
+        try {
+            ec2ResourceModelSource = new EC2ResourceModelSource(configuration, services);
+        } catch (IllegalArgumentException e) {
+            // The constructor validates eagerly, before allocating any resources, but -- to keep its
+            // own signature source compatible with callers compiled against the prior version, which
+            // declared no checked exception -- reports an invalid configuration as this unchecked
+            // exception, wrapping the real ConfigurationException as its cause. Unwrap it here so this
+            // method's own documented ConfigurationException contract is honored.
+            if (e.getCause() instanceof ConfigurationException) {
+                throw (ConfigurationException) e.getCause();
+            }
+            throw e;
+        }
         ec2ResourceModelSource.validate();
         return ec2ResourceModelSource;
     }
