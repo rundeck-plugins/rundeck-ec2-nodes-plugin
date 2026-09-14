@@ -93,59 +93,62 @@ class InstanceToNodeMapper {
                 .build();
 
         if(getEndpoint() != null) {
-            ExecutorService executor = null;
-            Collection<Future<Set<Ec2Instance>>> futures = new LinkedList<Future<Set<Ec2Instance>>>();
-            Set<Callable<Set<Ec2Instance>>> tasks = new HashSet<>();
             List<String> endpoints = determineEndpoints();
-            for (String endpoint : endpoints) {
-                if(queryNodeInstancesInParallel) {
-                    if(executor == null){
-                        logger.info("Creating thread pool for {} regions", endpoints.size() );
-                        executor = Executors.newFixedThreadPool(endpoints.size());
-                    }
-                    tasks.add(new Callable<Set<Ec2Instance>>() {
-                        @Override
-                        public Set<Ec2Instance> call() throws Exception {
-                            return getInstancesByRegion(endpoint);
-                        };
-                    });
-                }else{
-                    instances.addAll(getInstancesByRegion(endpoint));
-                }
-            }
-            if(queryNodeInstancesInParallel) {
+            if (queryNodeInstancesInParallel && !endpoints.isEmpty()) {
+                logger.info("Creating thread pool for {} regions", endpoints.size());
+                ExecutorService executor = Executors.newFixedThreadPool(endpoints.size());
                 try {
-                    logger.info("Querying {} regions in parallel", endpoints.size() );
-                    futures = executor.invokeAll(tasks);
+                    Set<Callable<Set<Ec2Instance>>> tasks = new HashSet<>();
+                    for (String endpoint : endpoints) {
+                        tasks.add(new Callable<Set<Ec2Instance>>() {
+                            @Override
+                            public Set<Ec2Instance> call() throws Exception {
+                                return getInstancesByRegion(endpoint);
+                            }
+                        });
+                    }
+                    logger.info("Querying {} regions in parallel", endpoints.size());
+                    List<Future<Set<Ec2Instance>>> futures = executor.invokeAll(tasks);
+                    for (Future<Set<Ec2Instance>> future : futures) {
+                        try {
+                            instances.addAll(future.get());
+                        } catch (CancellationException e) {
+                            // Expected when this query is cancelled mid-flight (e.g. the source is
+                            // being closed/reloaded while regions are still being queried); skip this
+                            // region's results rather than letting the exception escape and skip the
+                            // executor shutdown below.
+                            logger.warn("A region query was cancelled before completing: {}", e.getMessage());
+                        } catch (ExecutionException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    logger.info("Finished querying {} regions in parallel", endpoints.size());
                 } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 } finally {
+                    // Always shut down this per-region thread pool before returning, regardless of
+                    // how the above completes -- normally, via an exception from invokeAll() or
+                    // future.get() (including CancellationException, which the catch above already
+                    // handles, but any other RuntimeException would also still reach this finally), or
+                    // an interrupt arriving from the outer refresh executor (e.g. while this source is
+                    // being closed). Without this being unconditional, these worker threads could be
+                    // left running indefinitely.
+                    executor.shutdown();
                     try {
-                        for (Future<Set<Ec2Instance>> future : futures) {
-                            if (future != null) {
-                                instances.addAll(future.get());
-                            }
+                        logger.info("Waiting up to {} seconds for the region query thread pool to terminate", 90);
+                        if (!executor.awaitTermination(90, TimeUnit.SECONDS)) {
+                            logger.warn("Region query thread pool did not terminate promptly; forcing shutdown");
                         }
-                        logger.info("Finished querying {} regions in parallel", endpoints.size() );
-                        executor.shutdown();
                     } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    } catch (ExecutionException e) {
-                        throw new RuntimeException(e);
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        executor.shutdownNow();
                     }
                 }
-                try {
-                    // Wait for 90 seconds for all tasks to finish
-                    logger.info("Waiting for {} seconds for all tasks to finish", 90);
-                    executor.awaitTermination(90, TimeUnit.SECONDS);
-                } catch (InterruptedException ignored) {
-                    // Restore interrupted status
-                    logger.warn("Thread interrupted while waiting for tasks to finish", ignored);
-                    Thread.currentThread().interrupt();
-                } finally {
-                    // Force shutdown if not already done
-                    logger.warn("Forcing shutdown of thread pool");
-                    executor.shutdownNow();
+            } else {
+                for (String endpoint : endpoints) {
+                    instances.addAll(getInstancesByRegion(endpoint));
                 }
             }
         }

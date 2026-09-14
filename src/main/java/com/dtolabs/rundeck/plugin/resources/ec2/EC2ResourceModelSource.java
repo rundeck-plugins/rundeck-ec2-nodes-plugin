@@ -179,7 +179,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         }
     }
 
-    public EC2ResourceModelSource(final Properties configuration, final Services services) throws ConfigurationException {
+    public EC2ResourceModelSource(final Properties configuration, final Services services) {
         this.services = services;
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
         this.secretKey = configuration.getProperty(EC2ResourceModelSourceFactory.SECRET_KEY);
@@ -206,7 +206,18 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         // Calls the private doValidate() rather than the public, overridable validate(): invoking an
         // overridable method from a constructor runs it before a subclass's own fields/constructor
         // code have initialized, which could validate against incomplete state.
-        doValidate();
+        //
+        // Wrapped as an unchecked exception rather than letting the checked ConfigurationException
+        // propagate: this constructor's signature intentionally does not declare it, to stay source
+        // compatible with callers compiled against the prior signature (which declared no checked
+        // exception at all). EC2ResourceModelSourceFactory -- the intended construction path, and the
+        // one with a documented ConfigurationException contract -- unwraps this back to the original
+        // checked exception; see its createResourceModelSource(Services, Properties).
+        try {
+            doValidate();
+        } catch (ConfigurationException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
 
         // Allocated only now that validation has passed -- see the field's own comment.
         this.executor = Executors.newFixedThreadPool(1);
