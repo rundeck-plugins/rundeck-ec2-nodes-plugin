@@ -132,6 +132,9 @@ class InstanceToNodeMapper {
                         throw new RuntimeException(e);
                     } catch (ExecutionException e) {
                         throw new RuntimeException(e);
+                    } catch (CancellationException e) {
+                        executor.shutdownNow();
+                        throw e;
                     }
                 }
                 try {
