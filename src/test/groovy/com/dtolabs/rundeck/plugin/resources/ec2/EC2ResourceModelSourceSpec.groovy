@@ -29,11 +29,15 @@ class EC2ResourceModelSourceSpec extends Specification {
         rms.lastRefresh = 1L
 
         when: "getNodes() submits the background query; we only wait for that submitted task itself to finish, not for another getNodes() call"
-        rms.getNodes()
         try {
-            rms.futureResult.get()
-        } catch (Exception ignored) {
-            // expected: the task is expected to fail; get() here is only used to block until it's done
+            rms.getNodes()
+            try {
+                rms.futureResult.get()
+            } catch (Exception ignored) {
+                // expected: the task is expected to fail; get() here is only used to block until it's done
+            }
+        } finally {
+            rms.close()
         }
 
         then: "the failure is already visible via getModelSourceErrors(), with no additional getNodes()/checkFuture() call involved"
