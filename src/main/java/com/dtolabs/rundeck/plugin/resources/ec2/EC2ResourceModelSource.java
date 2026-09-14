@@ -83,7 +83,9 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     private String secretKey;
     private String secretKeyStoragePath;
     long refreshInterval = 30000;
-    long lastRefresh = 0;
+    // written from the background refresh thread (see getNodes()'s async task) as well as from
+    // getNodes() itself; volatile so the completion timestamp is visible across both.
+    volatile long lastRefresh = 0;
     String filterParams;
     String endpoint;
     String httpProxyHost;
@@ -112,7 +114,11 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     static final Properties defaultMapping = new Properties();
     InstanceToNodeMapper mapper;
 
-    ExecutorService executor = Executors.newFixedThreadPool(1);
+    // Not initialized here: allocated in the constructor only after validate() succeeds, so a
+    // ConfigurationException doesn't leak a live thread pool that nothing can ever close() (field
+    // initializers run before any constructor statement, i.e. before an early validate() call would
+    // have a chance to prevent the allocation).
+    ExecutorService executor;
 
     /**
      * Message from the most recent failed background (async) refresh, or null if the last refresh
@@ -196,7 +202,14 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         // resources that only its own close() releases -- and a discarded, never-returned instance
         // can never have close() called on it by anything else. Failing fast here, before any of
         // that is allocated, means there is nothing to clean up for this particular misconfiguration.
-        validate();
+        //
+        // Calls the private doValidate() rather than the public, overridable validate(): invoking an
+        // overridable method from a constructor runs it before a subclass's own fields/constructor
+        // code have initialized, which could validate against incomplete state.
+        doValidate();
+
+        // Allocated only now that validation has passed -- see the field's own comment.
+        this.executor = Executors.newFixedThreadPool(1);
 
         int proxyPort = 80;
 
@@ -254,24 +267,29 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
 
             // createEc2Supplier() resolves credentials, which for an assumed role makes a real STS
             // AssumeRole call -- if that (or anything else below) throws, this partially-initialized
-            // instance is never returned to any caller, so close() must be called here to release the
-            // HTTP client (and executor) already allocated above; otherwise nothing else ever would.
+            // instance is never returned to any caller, so releaseResources() must be called here to
+            // free the HTTP client (and executor) already allocated above; otherwise nothing else ever
+            // would (see the catch block below).
             mapper = new InstanceToNodeMapper(createEc2Supplier(), mapping, pageResults);
             mapper.setFilterParams(params);
             mapper.setEndpoint(endpoint);
             mapper.setRegion(region);
             mapper.setRunningStateOnly(runningOnly);
         } catch (RuntimeException e) {
-            close();
+            // Calls the private releaseResources() rather than the public, overridable close():
+            // invoking an overridable method here would run it on a "this" that may still be under
+            // construction from a subclass's point of view, before the subclass's own fields have
+            // initialized.
+            releaseResources();
             throw e;
         }
     }
 
 
     /**
-     * Parse an integer property, falling back to a default and logging a warning if it is missing,
-     * blank, or not a valid integer, rather than letting a raw {@link NumberFormatException} escape
-     * from the constructor.
+     * Parse an integer property, falling back to a default (silently) if it is missing or blank, or
+     * (logging a warning) if it is present but not a valid integer -- rather than letting a raw
+     * {@link NumberFormatException} escape from the constructor.
      */
     private static int parseIntOrDefault(String value, int defaultValue, String propName) {
         if (null == value || "".equals(value)) {
@@ -383,12 +401,20 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
          * If queryAync is false(default now) or this is the first fetch we just block here.
          */
         if (lastRefresh > 0 && queryAsync && null == futureResult) {
-            // lastRefresh is intentionally NOT stamped here: it is stamped in checkFuture() once the
-            // query actually completes. Stamping it at submission time would let a query that runs
-            // longer than refreshInterval be immediately followed by another one back-to-back, with
-            // none of the configured cooldown actually elapsing between queries.
+            // lastRefresh is intentionally NOT stamped here: it is stamped by the task itself, below,
+            // at the moment the query actually finishes. Stamping it at submission time would let a
+            // query that runs longer than refreshInterval be immediately followed by another one
+            // back-to-back, with none of the configured cooldown actually elapsing between queries.
             futureResult = executor.submit(() -> {
-                return mapper.performQuery(queryNodeInstancesInParallel);
+                try {
+                    return mapper.performQuery(queryNodeInstancesInParallel);
+                } finally {
+                    // Stamped here, on the background thread, at actual completion time -- not by a
+                    // later getNodes() call merely observing that the future is done in checkFuture().
+                    // A poll that happens well after this point would otherwise reset the timestamp
+                    // to that later time, pushing the next refresh out past the configured interval.
+                    lastRefresh = System.currentTimeMillis();
+                }
             });
             logger.debug("Started background EC2 node refresh");
         } else if (!queryAsync || lastRefresh < 1) {
@@ -421,18 +447,18 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                 Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
                 Throwable cause = null != e.getCause() ? e.getCause() : e;
-                logger.warn("Error performing query: " + cause.getMessage(), e);
+                String message = cause.getMessage();
+                logger.warn("Error performing query: " + message, e);
                 // surface the failure via ResourceModelSourceErrors instead of silently continuing
                 // to serve the last cached result set forever with no indication anything is wrong.
-                // Fall back to toString() when the cause has no message (e.g. a bare
-                // RuntimeException()), so a real failure never leaves lastQueryError null.
-                lastQueryError = null != cause.getMessage() ? cause.getMessage() : cause.toString();
+                // Fall back to toString() when the cause has no usable message -- either null (e.g. a
+                // bare RuntimeException()) or blank -- so a real failure never leaves lastQueryError
+                // null or empty, either of which would make the failure invisible to callers.
+                lastQueryError = (null != message && !message.isEmpty()) ? message : cause.toString();
             } finally {
-                // Stamp completion time here (success or failure) so the configured refresh interval
-                // is honored as a true cooldown after the query actually finishes, instead of being
-                // measured from submission time (which would let an overrunning query be immediately
-                // followed by another, and would busy-retry a persistently failing query every poll).
-                lastRefresh = System.currentTimeMillis();
+                // lastRefresh is intentionally NOT stamped here: for the async path it is already
+                // stamped by the submitted task itself (see getNodes()) at actual completion time,
+                // not at the later, arbitrary moment a poll happens to observe the future is done.
                 futureResult = null;
             }
         }
@@ -488,6 +514,15 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     }
 
     public void validate() throws ConfigurationException {
+        doValidate();
+    }
+
+    /**
+     * Actual validation logic, kept private (non-overridable) so it is safe to call from the
+     * constructor -- unlike the public {@link #validate()}, which a subclass could override and
+     * which would then run before that subclass's own fields/constructor code have initialized.
+     */
+    private void doValidate() throws ConfigurationException {
         if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
             throw new ConfigurationException("secretKey is required for use with accessKey");
         }
@@ -515,6 +550,16 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
      */
     @Override
     public void close() {
+        releaseResources();
+    }
+
+    /**
+     * Actual cleanup logic, kept private (non-overridable) so it is safe to call from the
+     * constructor's failure path -- unlike the public {@link #close()}, which a subclass could
+     * override and which would then run on a "this" that may still be under construction from that
+     * subclass's point of view, before its own fields have initialized.
+     */
+    private void releaseResources() {
         executor.shutdownNow();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {

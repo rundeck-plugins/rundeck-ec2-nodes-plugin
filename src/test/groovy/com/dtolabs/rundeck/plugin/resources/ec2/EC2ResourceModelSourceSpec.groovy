@@ -1,5 +1,6 @@
 package com.dtolabs.rundeck.plugin.resources.ec2
 
+import software.amazon.awssdk.auth.credentials.AwsCredentials
 import com.dtolabs.rundeck.core.common.Framework
 import com.dtolabs.rundeck.core.common.IRundeckProject
 import com.dtolabs.rundeck.core.common.ProjectManager
@@ -8,14 +9,16 @@ import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree
 import org.rundeck.app.spi.Services
 import org.rundeck.storage.api.StorageException
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Future
 
 class EC2ResourceModelSourceSpec extends Specification {
 
-    def "getModelSourceErrors surfaces a failed async refresh even when the exception has no message"() {
-        given: "a constructed source with a background refresh that already completed with a message-less exception"
+    @Unroll
+    def "getModelSourceErrors surfaces a failed async refresh even when the exception has #description message"() {
+        given: "a constructed source with a background refresh that already completed with a #description-message exception"
         def config = createDefaultConfig()
         config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
         config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
@@ -23,7 +26,7 @@ class EC2ResourceModelSourceSpec extends Specification {
         EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
         rms.futureResult = Mock(Future) {
             isDone() >> true
-            get() >> { throw new ExecutionException(new RuntimeException()) }
+            get() >> { throw new ExecutionException(cause) }
         }
         // avoid needsRefresh() triggering another (real) query attempt once checkFuture() completes
         rms.lastRefresh = System.currentTimeMillis()
@@ -31,11 +34,17 @@ class EC2ResourceModelSourceSpec extends Specification {
         when: "getNodes() runs checkFuture() and observes the failed future"
         rms.getNodes()
 
-        then:
+        then: "a real exception.toString() fallback is used instead of a blank/null error going unreported"
         def errors = rms.getModelSourceErrors()
         errors.size() == 1
         errors[0] != null
         !errors[0].isEmpty()
+        errors[0].contains("RuntimeException")
+
+        where:
+        description | cause
+        "no"        | new RuntimeException()
+        "blank"     | new RuntimeException("")
     }
 
     def "constructor validates configuration before allocating resources or contacting Services"() {
@@ -55,9 +64,9 @@ class EC2ResourceModelSourceSpec extends Specification {
         0 * services._
     }
 
-    def "close() releases resources when construction fails after the HTTP client has been allocated"() {
+    def "constructor failure after resource allocation still shuts down the executor, without going through the overridable close()"() {
         given: "a key storage lookup that fails, so createCredentials() throws from within the constructor"
-        RecordingEC2ResourceModelSource.closeCalled = false
+        CapturingEC2ResourceModelSource.captured = null
         def config = createDefaultConfig()
         config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
         config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH, "keys/missing")
@@ -68,11 +77,12 @@ class EC2ResourceModelSourceSpec extends Specification {
         }
 
         when:
-        new RecordingEC2ResourceModelSource(config, services)
+        new CapturingEC2ResourceModelSource(config, services)
 
-        then:
+        then: "construction fails, but the instance it failed on (captured just before the throw) shows its executor was still shut down by the constructor's own cleanup path"
         thrown(StorageException)
-        RecordingEC2ResourceModelSource.closeCalled
+        CapturingEC2ResourceModelSource.captured != null
+        CapturingEC2ResourceModelSource.captured.executor.isShutdown()
     }
 
     def "user configured access credentials prefer key storage"() {
@@ -189,21 +199,24 @@ class EC2ResourceModelSourceSpec extends Specification {
 }
 
 /**
- * Records whether {@link EC2ResourceModelSource#close()} was invoked, including when it is called
- * from within the base class's own constructor after a construction failure -- close() is not
- * private/final, so the override below is still reached via virtual dispatch even though "this"
- * never escapes as a usable reference once the constructor throws.
+ * Captures a reference to "this" from within {@link #createCredentials()}, before delegating to the
+ * real implementation -- which, in the test that uses this class, is expected to throw. Overriding
+ * createCredentials() (rather than close()) to capture the instance is deliberately safe to do from
+ * still-under-construction state: it touches no fields of its own, so the base class constructor's
+ * own subsequent cleanup (calling its private, non-overridable releaseResources() -- see
+ * EC2ResourceModelSource) can be observed afterward directly on the captured instance, with no
+ * reliance on any overridable cleanup method being invoked mid-construction.
  */
-class RecordingEC2ResourceModelSource extends EC2ResourceModelSource {
-    static boolean closeCalled = false
+class CapturingEC2ResourceModelSource extends EC2ResourceModelSource {
+    static EC2ResourceModelSource captured
 
-    RecordingEC2ResourceModelSource(Properties configuration, Services services) throws ConfigurationException {
+    CapturingEC2ResourceModelSource(Properties configuration, Services services) throws ConfigurationException {
         super(configuration, services)
     }
 
     @Override
-    void close() {
-        closeCalled = true
-        super.close()
+    protected AwsCredentials createCredentials() {
+        captured = this
+        return super.createCredentials()
     }
 }
