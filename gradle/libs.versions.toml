@@ -6,7 +6,7 @@ commonsBeanutils = "1.11.0"
 groovy = "4.0.33"
 jacksonDatabind = "2.22.2"
 objenesis = "3.6"
-rundeckCore = "6.2.1-20260909"
+rundeckCore = "7.0.0-SNAPSHOT"
 slf4j = "2.0.19"
 spock = "2.4-groovy-4.0"
 # Security overrides for transitive dependencies
