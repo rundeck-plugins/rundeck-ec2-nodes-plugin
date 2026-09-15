@@ -20,7 +20,7 @@ ext.developers = [
 ]
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_25
     withJavadocJar()
     withSourcesJar()
 }
