@@ -77,9 +77,10 @@ class EC2ResourceModelSourceSpec extends Specification {
         when:
         rms.validate()
 
-        then:
+        then: "the check fails and the already-allocated executor is released, since no caller will close() a rejected instance"
         ConfigurationException ex = thrown()
         ex.message.contains("secretKey is required")
+        rms.executor.isShutdown()
 
         cleanup:
         rms.close()
