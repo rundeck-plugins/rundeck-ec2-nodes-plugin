@@ -3,6 +3,7 @@ on:
     # Sequence of patterns matched against refs/tags
     tags:
       - '*.*.*' # Push events to matching semver tags (no v prefix)
+      - '!*-alpha*'
 
 name: Upload Release Asset
 
