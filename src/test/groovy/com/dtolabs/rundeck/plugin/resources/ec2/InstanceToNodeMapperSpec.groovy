@@ -312,6 +312,84 @@ class InstanceToNodeMapperSpec extends Specification {
         ['https://ec2.us-west-2.amazonaws.com'] | ['us-west-2']
         ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com'] | ['us-west-1','us-east-1']
     }
+
+    def "parallel query (queryNodeInstancesInParallel=true) aggregates results from all endpoints"() {
+        given: "the same multi-endpoint setup, queried in parallel"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        def regions = ['us-west-1', 'us-east-1']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            0 * getEC2ForDefaultRegion()
+            0 * getEC2ForRegion(_)
+            _ * getEC2ForEndpoint({ it in endpoints }) >> { args ->
+                def region = regions[endpoints.indexOf(args[0])]
+                def instance = mkInstance(region).toBuilder()
+                        .instanceId("aninstanceId-${region}".toString())
+                        .build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        def instances = mapper.performQuery(true)
+
+        then: "both regions' instances are present"
+        instances != null
+        instances.getNodeNames().size() == 2
+        instances.getNode("aninstanceId-us-west-1") != null
+        instances.getNode("aninstanceId-us-east-1") != null
+    }
+
+    def "parallel query still terminates promptly, without leaking its inner thread pool, when interrupted mid-flight"() {
+        given: "one endpoint that hangs until released, and a second that returns immediately"
+        def startedLatch = new java.util.concurrent.CountDownLatch(1)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint(_) >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                    describeInstances(_) >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeInstancesResponse.builder().build()
+                    }
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+        Throwable caught = null
+        Thread queryThread = new Thread({ ->
+            try {
+                mapper.performQuery(true)
+            } catch (Throwable t) {
+                caught = t
+            }
+        })
+
+        when: "the query is started, then interrupted once blocked inside a region call"
+        queryThread.start()
+        boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        queryThread.interrupt()
+        queryThread.join(5000)
+
+        then: "the region call was actually reached before interrupting"
+        reachedBlockedRegionCall
+
+        and: "the interrupted thread finishes without hanging"
+        !queryThread.isAlive()
+        caught != null
+
+        cleanup: "release the mock call"
+        releaseLatch.countDown()
+    }
     def "region added to the node attributes with ALL_REGIONS specified"() {
         given:
 

@@ -77,6 +77,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     public static final String HTTP_PROXY_USER = "httpProxyUser";
     public static final String HTTP_PROXY_PASS = "httpProxyPass";
     public static final String MAX_RESULTS = "pageResults";
+    public static final int MAX_RESULTS_DEFAULT = 100;
 
     public EC2ResourceModelSourceFactory() {
 
@@ -85,9 +86,23 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     }
 
     public ResourceModelSource createResourceModelSource(Services services, final Properties configuration) throws ConfigurationException {
-        final EC2ResourceModelSource ec2ResourceModelSource = new EC2ResourceModelSource(configuration, services);
-        ec2ResourceModelSource.validate();
-        return ec2ResourceModelSource;
+        validateConfiguration(configuration);
+        return new EC2ResourceModelSource(configuration, services);
+    }
+
+    /**
+     * Validate the configuration before constructing an {@link EC2ResourceModelSource}, so an
+     * invalid configuration never reaches the constructor and never allocates any resources.
+     * Public so other callers that construct {@link EC2ResourceModelSource} directly (e.g.
+     * rundeckpro's own factory) can get the same no-allocation guarantee.
+     */
+    public static void validateConfiguration(Properties configuration) throws ConfigurationException {
+        String accessKey = configuration.getProperty(ACCESS_KEY);
+        String secretKey = configuration.getProperty(SECRET_KEY);
+        String secretKeyStoragePath = configuration.getProperty(SECRET_KEY_STORAGE_PATH);
+        if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
+            throw new ConfigurationException("secretKey is required for use with accessKey");
+        }
     }
 
     public ResourceModelSource createResourceModelSource(Properties configuration) throws ConfigurationException {
@@ -220,7 +235,7 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
                     false, "true"))
             .property(PropertyUtil.integer(MAX_RESULTS, "Max API Results",
                     "Max number of reservations returned per AWS API call.",
-                    false, "100"))
+                    false, String.valueOf(MAX_RESULTS_DEFAULT)))
             .property(PropertyUtil.bool(QUERY_NODE_INSTANCES_IN_PARALLEL, "Query Node Instances in Parallel",
                     "Query node instances in parallel. If false, instances will be queried one at a time.",
                     false, "false"))

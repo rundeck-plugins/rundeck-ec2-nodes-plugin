@@ -1,14 +1,111 @@
 package com.dtolabs.rundeck.plugin.resources.ec2
 
+import software.amazon.awssdk.auth.credentials.AwsCredentials
 import com.dtolabs.rundeck.core.common.Framework
 import com.dtolabs.rundeck.core.common.IRundeckProject
 import com.dtolabs.rundeck.core.common.ProjectManager
+import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException
 import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree
 import org.rundeck.app.spi.Services
 import org.rundeck.storage.api.StorageException
 import spock.lang.Specification
+import spock.lang.Unroll
 
 class EC2ResourceModelSourceSpec extends Specification {
+
+    @Unroll
+    def "getModelSourceErrors reflects a failed background refresh as soon as it completes, with no further getNodes() call, even when the exception has #description message"() {
+        given: "a source whose mapper will fail with a #description-message exception"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw cause }
+        }
+        // simulate an already-completed prior refresh so the next getNodes() call takes the async
+        // (background executor) path rather than the synchronous first-fetch path
+        rms.lastRefresh = 1L
+
+        when: "getNodes() submits the background query and it finishes"
+        try {
+            rms.getNodes()
+            try {
+                rms.futureResult.get()
+            } catch (Exception ignored) {
+                // expected: the task is expected to fail; get() here is only used to block until it's done
+            }
+        } finally {
+            rms.close()
+        }
+
+        then: "the failure is already visible via getModelSourceErrors()"
+        def errors = rms.getModelSourceErrors()
+        errors.size() == 1
+        errors[0].contains("RuntimeException")
+
+        where:
+        description | cause
+        "no"        | new RuntimeException()
+        "blank"     | new RuntimeException("")
+    }
+
+    def "constructor validates configuration before allocating resources or contacting Services"() {
+        given: "an access key configured without its secret key or storage path"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        def services = Mock(Services)
+
+        when:
+        ec2ResourceModelSource(services, config)
+
+        then:
+        ConfigurationException ex = thrown()
+        ex.message.contains("secretKey is required")
+        // proves construction failed before any credential/key-storage resolution was attempted,
+        // i.e. before the HTTP client or background executor would otherwise have been allocated
+        0 * services._
+    }
+
+    def "public validate() lets a caller that constructs the source directly, bypassing the factory, get the same check"() {
+        given: "an access key configured without its secret key or storage path, constructed directly rather than via the factory (mirroring rundeckpro's own factory)"
+        def config = new Properties()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        EC2ResourceModelSource rms = new EC2ResourceModelSource(config, Mock(Services))
+
+        when:
+        rms.validate()
+
+        then:
+        ConfigurationException ex = thrown()
+        ex.message.contains("secretKey is required")
+
+        cleanup:
+        rms.close()
+    }
+
+    def "constructor failure after resource allocation still shuts down the executor, without going through the overridable close()"() {
+        given: "a key storage lookup that fails, so createCredentials() throws from within the constructor"
+        CapturingEC2ResourceModelSource.captured = null
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY_STORAGE_PATH, "keys/missing")
+        def services = Mock(Services) {
+            getService(KeyStorageTree.class) >> Mock(KeyStorageTree) {
+                readPassword("keys/missing") >> { throw new IOException("not found") }
+            }
+        }
+
+        when:
+        new CapturingEC2ResourceModelSource(config, services)
+
+        then: "construction fails, but its executor is still shut down"
+        thrown(StorageException)
+        CapturingEC2ResourceModelSource.captured != null
+        CapturingEC2ResourceModelSource.captured.executor.isShutdown()
+    }
+
     def "user configured access credentials prefer key storage"() {
         given: "a user's plugin config"
         //Define good and bad keys and paths
@@ -119,5 +216,23 @@ class EC2ResourceModelSourceSpec extends Specification {
             getService(KeyStorageTree.class) >> storageTree
         }
 
+    }
+}
+
+/**
+ * Captures a reference to "this" from within {@link #createCredentials()}, before delegating to the
+ * real implementation, so the test can inspect the instance whose constructor is expected to throw.
+ */
+class CapturingEC2ResourceModelSource extends EC2ResourceModelSource {
+    static EC2ResourceModelSource captured
+
+    CapturingEC2ResourceModelSource(Properties configuration, Services services) throws ConfigurationException {
+        super(configuration, services)
+    }
+
+    @Override
+    protected AwsCredentials createCredentials() {
+        captured = this
+        return super.createCredentials()
     }
 }
