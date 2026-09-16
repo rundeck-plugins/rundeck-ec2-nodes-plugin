@@ -93,8 +93,10 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
     /**
      * Validate the configuration before constructing an {@link EC2ResourceModelSource}, so an
      * invalid configuration never reaches the constructor and never allocates any resources.
+     * Public so other callers that construct {@link EC2ResourceModelSource} directly (e.g.
+     * rundeckpro's own factory) can get the same no-allocation guarantee.
      */
-    private static void validateConfiguration(Properties configuration) throws ConfigurationException {
+    public static void validateConfiguration(Properties configuration) throws ConfigurationException {
         String accessKey = configuration.getProperty(ACCESS_KEY);
         String secretKey = configuration.getProperty(SECRET_KEY);
         String secretKeyStoragePath = configuration.getProperty(SECRET_KEY_STORAGE_PATH);

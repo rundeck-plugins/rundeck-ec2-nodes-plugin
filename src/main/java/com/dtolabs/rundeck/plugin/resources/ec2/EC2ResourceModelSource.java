@@ -38,6 +38,7 @@ import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
 import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
 import software.amazon.awssdk.services.sts.model.Credentials;
 import com.dtolabs.rundeck.core.common.INodeSet;
+import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceErrors;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
@@ -190,9 +191,9 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         this.assumeRoleArnCombinedWithExtId = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN_COMBINED_WITH_EXT_ID);
         this.externalId = configuration.getProperty(EC2ResourceModelSourceFactory.EXTERNAL_ID);
 
-        // EC2ResourceModelSourceFactory -- the only construction path -- validates the configuration
-        // before calling this constructor, so accessKey/secretKey/secretKeyStoragePath are already
-        // known to be consistent by this point.
+        // Callers going through EC2ResourceModelSourceFactory have already had the configuration
+        // validated before this constructor runs. Other callers that construct this class directly
+        // (e.g. rundeckpro's own factory) must call validate() themselves after construction.
         this.executor = Executors.newFixedThreadPool(1);
 
         int proxyPort = 80;
@@ -487,6 +488,18 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         }
         if (mapping.size() < 1) {
             mapping.putAll(defaultMapping);
+        }
+    }
+
+    /**
+     * Validate this instance's configuration. EC2ResourceModelSourceFactory validates the
+     * {@link Properties} before construction (see its {@code validateConfiguration}) so it never
+     * needs to call this, but other callers that construct this class directly -- e.g. rundeckpro's
+     * own factory -- must call this themselves after construction to get the same check.
+     */
+    public void validate() throws ConfigurationException {
+        if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
+            throw new ConfigurationException("secretKey is required for use with accessKey");
         }
     }
 

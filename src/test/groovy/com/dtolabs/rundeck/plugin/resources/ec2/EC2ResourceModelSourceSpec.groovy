@@ -68,6 +68,23 @@ class EC2ResourceModelSourceSpec extends Specification {
         0 * services._
     }
 
+    def "public validate() lets a caller that constructs the source directly, bypassing the factory, get the same check"() {
+        given: "an access key configured without its secret key or storage path, constructed directly rather than via the factory (mirroring rundeckpro's own factory)"
+        def config = new Properties()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        EC2ResourceModelSource rms = new EC2ResourceModelSource(config, Mock(Services))
+
+        when:
+        rms.validate()
+
+        then:
+        ConfigurationException ex = thrown()
+        ex.message.contains("secretKey is required")
+
+        cleanup:
+        rms.close()
+    }
+
     def "constructor failure after resource allocation still shuts down the executor, without going through the overridable close()"() {
         given: "a key storage lookup that fails, so createCredentials() throws from within the constructor"
         CapturingEC2ResourceModelSource.captured = null
