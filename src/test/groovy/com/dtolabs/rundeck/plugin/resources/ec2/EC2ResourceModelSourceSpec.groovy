@@ -15,7 +15,7 @@ class EC2ResourceModelSourceSpec extends Specification {
 
     @Unroll
     def "getModelSourceErrors reflects a failed background refresh as soon as it completes, with no further getNodes() call, even when the exception has #description message"() {
-        given: "a constructed source whose mapper will fail the next query with a #description-message exception"
+        given: "a source whose mapper will fail with a #description-message exception"
         def config = createDefaultConfig()
         config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
         config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
@@ -28,7 +28,7 @@ class EC2ResourceModelSourceSpec extends Specification {
         // (background executor) path rather than the synchronous first-fetch path
         rms.lastRefresh = 1L
 
-        when: "getNodes() submits the background query; we only wait for that submitted task itself to finish, not for another getNodes() call"
+        when: "getNodes() submits the background query and it finishes"
         try {
             rms.getNodes()
             try {
@@ -40,11 +40,9 @@ class EC2ResourceModelSourceSpec extends Specification {
             rms.close()
         }
 
-        then: "the failure is already visible via getModelSourceErrors(), with no additional getNodes()/checkFuture() call involved"
+        then: "the failure is already visible via getModelSourceErrors()"
         def errors = rms.getModelSourceErrors()
         errors.size() == 1
-        errors[0] != null
-        !errors[0].isEmpty()
         errors[0].contains("RuntimeException")
 
         where:
@@ -54,7 +52,7 @@ class EC2ResourceModelSourceSpec extends Specification {
     }
 
     def "constructor validates configuration before allocating resources or contacting Services"() {
-        given: "an access key configured without its secret key or storage path -- invalid per validate()"
+        given: "an access key configured without its secret key or storage path"
         def config = createDefaultConfig()
         config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
         def services = Mock(Services)
@@ -85,7 +83,7 @@ class EC2ResourceModelSourceSpec extends Specification {
         when:
         new CapturingEC2ResourceModelSource(config, services)
 
-        then: "construction fails, but the instance it failed on (captured just before the throw) shows its executor was still shut down by the constructor's own cleanup path"
+        then: "construction fails, but its executor is still shut down"
         thrown(StorageException)
         CapturingEC2ResourceModelSource.captured != null
         CapturingEC2ResourceModelSource.captured.executor.isShutdown()
@@ -206,12 +204,7 @@ class EC2ResourceModelSourceSpec extends Specification {
 
 /**
  * Captures a reference to "this" from within {@link #createCredentials()}, before delegating to the
- * real implementation -- which, in the test that uses this class, is expected to throw. Overriding
- * createCredentials() (rather than close()) to capture the instance is deliberately safe to do from
- * still-under-construction state: it touches no fields of its own, so the base class constructor's
- * own subsequent cleanup (calling its private, non-overridable releaseResources() -- see
- * EC2ResourceModelSource) can be observed afterward directly on the captured instance, with no
- * reliance on any overridable cleanup method being invoked mid-construction.
+ * real implementation, so the test can inspect the instance whose constructor is expected to throw.
  */
 class CapturingEC2ResourceModelSource extends EC2ResourceModelSource {
     static EC2ResourceModelSource captured

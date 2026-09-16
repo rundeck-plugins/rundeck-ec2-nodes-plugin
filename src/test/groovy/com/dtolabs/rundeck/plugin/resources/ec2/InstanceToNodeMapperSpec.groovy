@@ -314,7 +314,7 @@ class InstanceToNodeMapperSpec extends Specification {
     }
 
     def "parallel query (queryNodeInstancesInParallel=true) aggregates results from all endpoints"() {
-        given: "the same multi-endpoint setup as the sequential case above, queried in parallel instead"
+        given: "the same multi-endpoint setup, queried in parallel"
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         def regions = ['us-west-1', 'us-east-1']
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -339,7 +339,7 @@ class InstanceToNodeMapperSpec extends Specification {
         when:
         def instances = mapper.performQuery(true)
 
-        then: "both regions' instances are present, exactly as they would be querying sequentially"
+        then: "both regions' instances are present"
         instances != null
         instances.getNodeNames().size() == 2
         instances.getNode("aninstanceId-us-west-1") != null
@@ -347,7 +347,7 @@ class InstanceToNodeMapperSpec extends Specification {
     }
 
     def "parallel query still terminates promptly, without leaking its inner thread pool, when interrupted mid-flight"() {
-        given: "one endpoint whose AWS call hangs until released, and a second that would return immediately"
+        given: "one endpoint that hangs until released, and a second that returns immediately"
         def startedLatch = new java.util.concurrent.CountDownLatch(1)
         def releaseLatch = new java.util.concurrent.CountDownLatch(1)
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
@@ -374,20 +374,20 @@ class InstanceToNodeMapperSpec extends Specification {
             }
         })
 
-        when: "the query is started, then interrupted once we know it's genuinely blocked inside a region call"
+        when: "the query is started, then interrupted once blocked inside a region call"
         queryThread.start()
         boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
         queryThread.interrupt()
         queryThread.join(5000)
 
-        then: "the region call was actually reached before interrupting -- otherwise interrupting an arbitrary earlier point wouldn't exercise the inner-pool cancellation path this test targets, and could pass without meaning anything"
+        then: "the region call was actually reached before interrupting"
         reachedBlockedRegionCall
 
-        and: "the interrupted query thread actually finishes -- it doesn't hang waiting on the stuck region call or on a leaked inner thread pool that never shuts down"
+        and: "the interrupted thread finishes without hanging"
         !queryThread.isAlive()
         caught != null
 
-        cleanup: "release the mock call in case anything is still blocked on it, so no thread from this test lingers"
+        cleanup: "release the mock call"
         releaseLatch.countDown()
     }
     def "region added to the node attributes with ALL_REGIONS specified"() {

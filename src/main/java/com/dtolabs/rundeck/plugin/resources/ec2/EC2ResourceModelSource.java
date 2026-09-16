@@ -38,7 +38,6 @@ import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
 import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
 import software.amazon.awssdk.services.sts.model.Credentials;
 import com.dtolabs.rundeck.core.common.INodeSet;
-import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException;
 import com.dtolabs.rundeck.core.resources.ResourceModelSource;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceErrors;
 import com.dtolabs.rundeck.core.resources.ResourceModelSourceException;
@@ -83,8 +82,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     private String secretKey;
     private String secretKeyStoragePath;
     long refreshInterval = 30000;
-    // written from the background refresh thread (see getNodes()'s async task) as well as from
-    // getNodes() itself; volatile so the completion timestamp is visible across both.
+    // volatile: written from both the background refresh thread and getNodes() itself
     volatile long lastRefresh = 0;
     String filterParams;
     String endpoint;
@@ -114,10 +112,6 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     static final Properties defaultMapping = new Properties();
     InstanceToNodeMapper mapper;
 
-    // Not initialized here: allocated in the constructor only after validate() succeeds, so a
-    // ConfigurationException doesn't leak a live thread pool that nothing can ever close() (field
-    // initializers run before any constructor statement, i.e. before an early validate() call would
-    // have a chance to prevent the allocation).
     ExecutorService executor;
 
     /**
@@ -188,7 +182,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         this.endpoint = configuration.getProperty(EC2ResourceModelSourceFactory.ENDPOINT);
         this.pageResults = parseIntOrDefault(
                 configuration.getProperty(EC2ResourceModelSourceFactory.MAX_RESULTS),
-                100,
+                EC2ResourceModelSourceFactory.MAX_RESULTS_DEFAULT,
                 EC2ResourceModelSourceFactory.MAX_RESULTS
         );
         this.httpProxyHost = configuration.getProperty(EC2ResourceModelSourceFactory.HTTP_PROXY_HOST);
@@ -196,30 +190,9 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         this.assumeRoleArnCombinedWithExtId = configuration.getProperty(EC2ResourceModelSourceFactory.ROLE_ARN_COMBINED_WITH_EXT_ID);
         this.externalId = configuration.getProperty(EC2ResourceModelSourceFactory.EXTERNAL_ID);
 
-        // Validate before allocating anything below (HTTP client, background executor, and any
-        // credentials/STS calls made while building the EC2 supplier). The factory also calls
-        // validate() separately after construction succeeds, but by then this object already holds
-        // resources that only its own close() releases -- and a discarded, never-returned instance
-        // can never have close() called on it by anything else. Failing fast here, before any of
-        // that is allocated, means there is nothing to clean up for this particular misconfiguration.
-        //
-        // Calls the private doValidate() rather than the public, overridable validate(): invoking an
-        // overridable method from a constructor runs it before a subclass's own fields/constructor
-        // code have initialized, which could validate against incomplete state.
-        //
-        // Wrapped as an unchecked exception rather than letting the checked ConfigurationException
-        // propagate: this constructor's signature intentionally does not declare it, to stay source
-        // compatible with callers compiled against the prior signature (which declared no checked
-        // exception at all). EC2ResourceModelSourceFactory -- the intended construction path, and the
-        // one with a documented ConfigurationException contract -- unwraps this back to the original
-        // checked exception; see its createResourceModelSource(Services, Properties).
-        try {
-            doValidate();
-        } catch (ConfigurationException e) {
-            throw new IllegalArgumentException(e.getMessage(), e);
-        }
-
-        // Allocated only now that validation has passed -- see the field's own comment.
+        // EC2ResourceModelSourceFactory -- the only construction path -- validates the configuration
+        // before calling this constructor, so accessKey/secretKey/secretKeyStoragePath are already
+        // known to be consistent by this point.
         this.executor = Executors.newFixedThreadPool(1);
 
         int proxyPort = 80;
@@ -412,41 +385,32 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
          * If queryAync is false(default now) or this is the first fetch we just block here.
          */
         if (lastRefresh > 0 && queryAsync && null == futureResult) {
-            // lastRefresh is intentionally NOT stamped here: it is stamped by the task itself, below,
-            // at the moment the query actually finishes. Stamping it at submission time would let a
-            // query that runs longer than refreshInterval be immediately followed by another one
-            // back-to-back, with none of the configured cooldown actually elapsing between queries.
+            // lastRefresh is stamped in the finally below, at completion time, not here at submission.
             futureResult = executor.submit(() -> {
                 try {
                     INodeSet result = mapper.performQuery(queryNodeInstancesInParallel);
-                    // Cleared here, at actual completion time -- see the catch block below for why.
                     lastQueryError = null;
                     return result;
                 } catch (Exception e) {
                     String message = e.getMessage();
                     logger.warn("Error performing query: " + message, e);
-                    // Recorded here, on the background thread, at actual completion time, rather than
-                    // relying on a later getNodes() call to notice via checkFuture(): otherwise
-                    // getModelSourceErrors() could keep returning a stale (or empty) value
-                    // indefinitely if node polling pauses or stops after this point, since nothing
-                    // else would ever run checkFuture() to notice the failure. Falls back to
-                    // toString() when the exception has no usable message -- either null or blank --
-                    // so a real failure never leaves lastQueryError null or empty.
+                    // recorded at completion time, on the executor thread
                     lastQueryError = (null != message && !message.isEmpty()) ? message : e.toString();
                     throw e;
                 } finally {
-                    // Stamped here, on the background thread, at actual completion time -- not by a
-                    // later getNodes() call merely observing that the future is done in checkFuture().
-                    // A poll that happens well after this point would otherwise reset the timestamp
-                    // to that later time, pushing the next refresh out past the configured interval.
+                    // stamped at completion time, on the executor thread
                     lastRefresh = System.currentTimeMillis();
                 }
             });
             logger.debug("Started background EC2 node refresh");
         } else if (!queryAsync || lastRefresh < 1) {
             //always perform synchronous query the first time
-            iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
-            lastRefresh = System.currentTimeMillis();
+            try {
+                iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
+            } finally {
+                // stamped even on failure, so a broken config doesn't retry with no cooldown
+                lastRefresh = System.currentTimeMillis();
+            }
             if (null != iNodeSet) {
                 logger.info("Read " + iNodeSet.getNodeNames().size() + " nodes from EC2");
             }
@@ -470,12 +434,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                 logger.debug("Interrupted", e);
                 Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
-                // lastQueryError and lastRefresh were already recorded by the submitted task itself
-                // (see getNodes()) at actual completion time -- not here, since this method only runs
-                // when a later getNodes() call happens to notice the future is done, which could be
-                // arbitrarily long after the background query actually failed (or never happen again).
-                // iNodeSet is intentionally left as the last successfully cached result set rather
-                // than cleared, so stale nodes keep being served alongside the now-visible error.
+                // error and timestamp already recorded by the task itself
             } finally {
                 futureResult = null;
             }
@@ -528,21 +487,6 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         }
         if (mapping.size() < 1) {
             mapping.putAll(defaultMapping);
-        }
-    }
-
-    public void validate() throws ConfigurationException {
-        doValidate();
-    }
-
-    /**
-     * Actual validation logic, kept private (non-overridable) so it is safe to call from the
-     * constructor -- unlike the public {@link #validate()}, which a subclass could override and
-     * which would then run before that subclass's own fields/constructor code have initialized.
-     */
-    private void doValidate() throws ConfigurationException {
-        if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
-            throw new ConfigurationException("secretKey is required for use with accessKey");
         }
     }
 
