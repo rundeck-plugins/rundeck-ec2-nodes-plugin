@@ -499,6 +499,8 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
      */
     public void validate() throws ConfigurationException {
         if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
+            // a rejected instance is never handed to anything that would close() it
+            releaseResources();
             throw new ConfigurationException("secretKey is required for use with accessKey");
         }
     }

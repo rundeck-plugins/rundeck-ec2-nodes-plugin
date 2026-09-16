@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.ec2.model.Region
 import software.amazon.awssdk.services.ec2.model.Reservation
 import software.amazon.awssdk.services.ec2.model.Tag
 import spock.lang.Specification
+import spock.util.concurrent.PollingConditions
 import spock.lang.Unroll
 
 /**
@@ -373,6 +374,7 @@ class InstanceToNodeMapperSpec extends Specification {
                 caught = t
             }
         })
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
 
         when: "the query is started, then interrupted once blocked inside a region call"
         queryThread.start()
@@ -387,8 +389,19 @@ class InstanceToNodeMapperSpec extends Specification {
         !queryThread.isAlive()
         caught != null
 
+        and: "the inner region pool was shut down too, not left alive with idle worker threads"
+        new PollingConditions(timeout: 5).eventually {
+            assert leakedPoolThreads(threadsBefore).isEmpty()
+        }
+
         cleanup: "release the mock call"
         releaseLatch.countDown()
+    }
+
+    /** Names of executor pool worker threads still alive that did not exist in the snapshot. */
+    private static List<String> leakedPoolThreads(Set<Thread> before) {
+        Thread.getAllStackTraces().keySet()
+                .findAll { !(it in before) && it.alive && it.name.startsWith("pool-") }*.name
     }
     def "region added to the node attributes with ALL_REGIONS specified"() {
         given:
