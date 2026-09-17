@@ -214,11 +214,22 @@ class InstanceToNodeMapper {
                 allInstances.addAll(newInstances);
             }
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                // An interrupted region query is a cancellation signal, not just another region
+                // failing: restore the interrupt status and propagate rather than swallowing it
+                // as an ordinary per-region error, so shutdown/cancellation semantics still hold.
+                // (None of the AWS SDK calls above declare a checked InterruptedException, so this
+                // is a runtime instanceof check rather than a dedicated catch clause.)
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
             // A single region failing (e.g. a policy that denies ec2:* outside one region under
             // ALL_REGIONS) must not discard nodes already fetched from other, working regions.
             // Both the sequential loop and the parallel-query Callables in performQuery() route
             // through this method, so isolating the failure here covers both call paths.
-            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + e.getMessage();
+            String detail = e.getMessage();
+            detail = (null != detail && !detail.isEmpty()) ? detail : e.toString();
+            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detail;
             logger.warn(message, e);
             lastQueryErrors.add(message);
         }
