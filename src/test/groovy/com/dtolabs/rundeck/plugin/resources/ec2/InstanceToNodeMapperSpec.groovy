@@ -347,6 +347,72 @@ class InstanceToNodeMapperSpec extends Specification {
         instances.getNode("aninstanceId-us-east-1") != null
     }
 
+    def "one region denied under multiple endpoints still returns the other region's nodes"() {
+        given: "us-west-1 denied (e.g. an IAM policy restricting ec2:* to us-east-1), us-east-1 working"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        def instances = mapper.performQuery(false)
+
+        then: "the working region's node is still returned, not discarded"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the denied region's failure is reported rather than lost silently"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("us-west-1")
+    }
+
+    def "one region denied under parallel querying still returns the other region's nodes"() {
+        given: "the same denied/working split, queried in parallel"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        def instances = mapper.performQuery(true)
+
+        then: "the working region's node is still returned, not discarded"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the denied region's failure is reported rather than lost silently"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("us-west-1")
+    }
+
     def "parallel query still terminates promptly, without leaking its inner thread pool, when interrupted mid-flight"() {
         given: "one endpoint that hangs until released, and a second that returns immediately"
         def startedLatch = new java.util.concurrent.CountDownLatch(1)

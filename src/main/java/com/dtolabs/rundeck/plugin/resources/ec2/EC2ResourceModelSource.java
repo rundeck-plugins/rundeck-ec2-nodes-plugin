@@ -390,7 +390,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             futureResult = executor.submit(() -> {
                 try {
                     INodeSet result = mapper.performQuery(queryNodeInstancesInParallel);
-                    lastQueryError = null;
+                    lastQueryError = joinQueryErrors(mapper.getQueryErrors());
                     return result;
                 } catch (Exception e) {
                     String message = e.getMessage();
@@ -408,6 +408,7 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             //always perform synchronous query the first time
             try {
                 iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
+                lastQueryError = joinQueryErrors(mapper.getQueryErrors());
             } finally {
                 // stamped even on failure, so a broken config doesn't retry with no cooldown
                 lastRefresh = System.currentTimeMillis();
@@ -451,6 +452,16 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     public List<String> getModelSourceErrors() {
         String error = lastQueryError;
         return null != error ? Collections.singletonList(error) : Collections.emptyList();
+    }
+
+    /**
+     * Joins per-region query errors (e.g. one denied region under an ALL_REGIONS/multi-endpoint
+     * configuration) into a single message for {@link #lastQueryError}, or null if there were none.
+     * Nodes from other, successfully-queried regions are still returned by {@link #getNodes()}; this
+     * just makes sure the partial failure isn't lost silently.
+     */
+    private static String joinQueryErrors(List<String> errors) {
+        return (null == errors || errors.isEmpty()) ? null : String.join("; ", errors);
     }
 
     /**

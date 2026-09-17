@@ -66,6 +66,14 @@ class InstanceToNodeMapper {
     private final int maxResults;
     private final EC2Supplier ec2Supplier;
 
+    /**
+     * Errors from individual region queries during the most recent {@link #performQuery(boolean)}
+     * call, e.g. an access-denied region under an ALL_REGIONS/multi-endpoint configuration. A failure
+     * here does not abort the overall query: nodes from other regions are still returned, and these
+     * messages let the caller surface the failure instead of losing it silently.
+     */
+    private final List<String> lastQueryErrors = new CopyOnWriteArrayList<>();
+
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
     /**
@@ -83,6 +91,7 @@ class InstanceToNodeMapper {
      *
      */
     public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
+        lastQueryErrors.clear();
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Ec2Instance> instances = new HashSet<>();
@@ -204,9 +213,25 @@ class InstanceToNodeMapper {
             if (newInstances != null && !newInstances.isEmpty()) {
                 allInstances.addAll(newInstances);
             }
+        } catch (Exception e) {
+            // A single region failing (e.g. a policy that denies ec2:* outside one region under
+            // ALL_REGIONS) must not discard nodes already fetched from other, working regions.
+            // Both the sequential loop and the parallel-query Callables in performQuery() route
+            // through this method, so isolating the failure here covers both call paths.
+            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + e.getMessage();
+            logger.warn(message, e);
+            lastQueryErrors.add(message);
         }
 
         return allInstances;
+    }
+
+    /**
+     * Errors from individual region queries during the most recent {@link #performQuery(boolean)}
+     * call, if any. Empty if every region queried successfully.
+     */
+    public List<String> getQueryErrors() {
+        return new ArrayList<>(lastQueryErrors);
     }
 
     private Set<Ec2Instance> query(final Ec2Client ec2, final DescribeInstancesRequest request) {
