@@ -230,7 +230,11 @@ class InstanceToNodeMapper {
             String detail = e.getMessage();
             detail = (null != detail && !detail.isEmpty()) ? detail : e.toString();
             String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detail;
-            logger.warn(message, e);
+            // WARN without the stack trace: under ALL_REGIONS with a region-restricted IAM policy,
+            // every disallowed region logs here on every refresh, and a full trace per region per
+            // cycle is noisy. The trace is still available at DEBUG for diagnostics.
+            logger.warn(message);
+            logger.debug(message, e);
             lastQueryErrors.add(message);
         }
 
