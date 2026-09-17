@@ -71,8 +71,13 @@ class InstanceToNodeMapper {
      * call, e.g. an access-denied region under an ALL_REGIONS/multi-endpoint configuration. A failure
      * here does not abort the overall query: nodes from other regions are still returned, and these
      * messages let the caller surface the failure instead of losing it silently.
+     * <p>
+     * Cleared and appended to once per endpoint (potentially concurrently, from the parallel query
+     * path) and read once at the end -- write-heavy, not read-heavy -- so a {@link ConcurrentLinkedQueue}
+     * is used rather than {@link java.util.concurrent.CopyOnWriteArrayList}, which would copy its
+     * entire backing array on every add/clear.
      */
-    private final List<String> lastQueryErrors = new CopyOnWriteArrayList<>();
+    private final Queue<String> lastQueryErrors = new ConcurrentLinkedQueue<>();
 
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
