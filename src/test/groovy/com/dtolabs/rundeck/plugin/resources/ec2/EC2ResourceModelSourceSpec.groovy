@@ -3,6 +3,7 @@ package com.dtolabs.rundeck.plugin.resources.ec2
 import software.amazon.awssdk.auth.credentials.AwsCredentials
 import com.dtolabs.rundeck.core.common.Framework
 import com.dtolabs.rundeck.core.common.IRundeckProject
+import com.dtolabs.rundeck.core.common.NodeSetImpl
 import com.dtolabs.rundeck.core.common.ProjectManager
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException
 import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree
@@ -49,6 +50,60 @@ class EC2ResourceModelSourceSpec extends Specification {
         description | cause
         "no"        | new RuntimeException()
         "blank"     | new RuntimeException("")
+    }
+
+    def "getModelSourceErrors reports partial per-region failures after a successful synchronous query"() {
+        given: "synchronous loading, and a mapper whose query succeeds but recorded a per-region failure"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "true")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> new NodeSetImpl()
+            getQueryErrors() >> ["Error querying EC2 region endpoint 'https://ec2.us-west-1.amazonaws.com': access denied"]
+        }
+
+        when: "getNodes() performs the (always-synchronous, first-fetch) query"
+        try {
+            rms.getNodes()
+        } finally {
+            rms.close()
+        }
+
+        then: "the per-region failure is reported even though the overall query succeeded"
+        def errors = rms.getModelSourceErrors()
+        errors.size() == 1
+        errors[0].contains("us-west-1")
+    }
+
+    def "getModelSourceErrors reports partial per-region failures after a successful background refresh"() {
+        given: "async loading, and a mapper whose query succeeds but recorded a per-region failure"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> new NodeSetImpl()
+            getQueryErrors() >> ["Error querying EC2 region endpoint 'https://ec2.us-west-1.amazonaws.com': access denied"]
+        }
+        // simulate an already-completed prior refresh so the next getNodes() call takes the async
+        // (background executor) path rather than the synchronous first-fetch path
+        rms.lastRefresh = 1L
+
+        when: "getNodes() submits the background query and it finishes"
+        try {
+            rms.getNodes()
+            rms.futureResult.get()
+        } finally {
+            rms.close()
+        }
+
+        then: "the per-region failure is reported even though the overall query succeeded"
+        def errors = rms.getModelSourceErrors()
+        errors.size() == 1
+        errors[0].contains("us-west-1")
     }
 
     def "constructor validates configuration before allocating resources or contacting Services"() {

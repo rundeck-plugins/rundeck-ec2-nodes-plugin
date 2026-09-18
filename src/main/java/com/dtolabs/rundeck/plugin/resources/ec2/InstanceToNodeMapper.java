@@ -66,6 +66,19 @@ class InstanceToNodeMapper {
     private final int maxResults;
     private final EC2Supplier ec2Supplier;
 
+    /**
+     * Errors from individual region queries during the most recent {@link #performQuery(boolean)}
+     * call, e.g. an access-denied region under an ALL_REGIONS/multi-endpoint configuration. A failure
+     * here does not abort the overall query: nodes from other regions are still returned, and these
+     * messages let the caller surface the failure instead of losing it silently.
+     * <p>
+     * Cleared and appended to once per endpoint (potentially concurrently, from the parallel query
+     * path) and read once at the end -- write-heavy, not read-heavy -- so a {@link ConcurrentLinkedQueue}
+     * is used rather than {@link java.util.concurrent.CopyOnWriteArrayList}, which would copy its
+     * entire backing array on every add/clear.
+     */
+    private final Queue<String> lastQueryErrors = new ConcurrentLinkedQueue<>();
+
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
     /**
@@ -83,6 +96,7 @@ class InstanceToNodeMapper {
      *
      */
     public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
+        lastQueryErrors.clear();
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Ec2Instance> instances = new HashSet<>();
@@ -204,9 +218,40 @@ class InstanceToNodeMapper {
             if (newInstances != null && !newInstances.isEmpty()) {
                 allInstances.addAll(newInstances);
             }
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                // An interrupted region query is a cancellation signal, not just another region
+                // failing: restore the interrupt status and propagate rather than swallowing it
+                // as an ordinary per-region error, so shutdown/cancellation semantics still hold.
+                // (None of the AWS SDK calls above declare a checked InterruptedException, so this
+                // is a runtime instanceof check rather than a dedicated catch clause.)
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+            // A single region failing (e.g. a policy that denies ec2:* outside one region under
+            // ALL_REGIONS) must not discard nodes already fetched from other, working regions.
+            // Both the sequential loop and the parallel-query Callables in performQuery() route
+            // through this method, so isolating the failure here covers both call paths.
+            String detail = e.getMessage();
+            detail = (null != detail && !detail.isEmpty()) ? detail : e.toString();
+            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detail;
+            // WARN without the stack trace: under ALL_REGIONS with a region-restricted IAM policy,
+            // every disallowed region logs here on every refresh, and a full trace per region per
+            // cycle is noisy. The trace is still available at DEBUG for diagnostics.
+            logger.warn(message);
+            logger.debug(message, e);
+            lastQueryErrors.add(message);
         }
 
         return allInstances;
+    }
+
+    /**
+     * Errors from individual region queries during the most recent {@link #performQuery(boolean)}
+     * call, if any. Empty if every region queried successfully.
+     */
+    public List<String> getQueryErrors() {
+        return new ArrayList<>(lastQueryErrors);
     }
 
     private Set<Ec2Instance> query(final Ec2Client ec2, final DescribeInstancesRequest request) {
