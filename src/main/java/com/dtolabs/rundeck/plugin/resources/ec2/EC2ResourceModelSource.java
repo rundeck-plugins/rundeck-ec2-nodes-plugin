@@ -291,7 +291,13 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     /**
      * Build a shared HTTP client, applying HTTP proxy configuration when supplied. The same client
      * is reused for the EC2 clients and the STS client so proxy settings apply consistently.
+     * <p>
+     * Deliberately still on the deprecated Apache HTTP client (4.x), not {@code apache5-client}: see
+     * the {@code pluginLibs} comment in {@code build.gradle} -- 4.x is the one actually bundled into
+     * the plugin jar (apache5-client is excluded to keep it small), so switching this import without
+     * also flipping that dependency would reference a client not present at runtime.
      */
+    @SuppressWarnings("deprecation")
     private SdkHttpClient buildHttpClient() {
         ApacheHttpClient.Builder builder = ApacheHttpClient.builder();
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
