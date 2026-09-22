@@ -527,9 +527,9 @@ class InstanceToNodeMapperSpec extends Specification {
         queryThread.start()
         boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
         new PollingConditions(timeout: 5).eventually {
-            assert workerBlockedOnReleaseLatch(threadsBefore) != null
+            assert workersBlockedOnReleaseLatch(threadsBefore).size() == 1
         }
-        Thread blockedWorker = workerBlockedOnReleaseLatch(threadsBefore)
+        Thread blockedWorker = workersBlockedOnReleaseLatch(threadsBefore)[0]
         blockedWorker.interrupt()
         queryThread.join(5000)
 
@@ -544,6 +544,54 @@ class InstanceToNodeMapperSpec extends Specification {
         instances.getNodeNames().size() == 1
 
         cleanup: "release the mock call in case the interrupt was somehow missed"
+        releaseLatch.countDown()
+    }
+
+    def "every region interrupted under parallel querying throws rather than returning an empty result"() {
+        given: "both endpoints hang until released, so both can be interrupted before either succeeds"
+        def startedLatch = new java.util.concurrent.CountDownLatch(2)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint(_) >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
+        Throwable caught = null
+        Thread queryThread = new Thread({ ->
+            try {
+                mapper.performQuery(true)
+            } catch (Throwable t) {
+                caught = t
+            }
+        })
+
+        when: "the query starts, and once both regions' calls are blocked, both worker threads are interrupted"
+        queryThread.start()
+        boolean bothReachedBlockedCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).size() == 2
+        }
+        workersBlockedOnReleaseLatch(threadsBefore).each { it.interrupt() }
+        queryThread.join(5000)
+
+        then: "both regions were actually reached and interrupted before either could succeed"
+        bothReachedBlockedCall
+        !queryThread.isAlive()
+
+        and: "the total failure propagates instead of yielding an empty-but-successful result, even though no per-region error was ever recorded"
+        caught != null
+
+        cleanup: "release the mock call in case an interrupt was somehow missed"
         releaseLatch.countDown()
     }
 
@@ -605,15 +653,16 @@ class InstanceToNodeMapperSpec extends Specification {
     }
 
     /**
-     * The new pool worker thread, if any, that's actually blocked inside {@code releaseLatch.await()}
-     * -- not just any new pool thread in {@code WAITING} state, since an idle worker parked on the
-     * pool's internal work queue is in that same state and would otherwise be matched instead.
+     * The new pool worker threads, if any, that are actually blocked inside {@code
+     * releaseLatch.await()} -- not just any new pool thread in {@code WAITING} state, since an idle
+     * worker parked on the pool's internal work queue is in that same state and would otherwise be
+     * matched instead.
      */
-    private static Thread workerBlockedOnReleaseLatch(Set<Thread> before) {
-        Thread.getAllStackTraces().find { thread, trace ->
+    private static List<Thread> workersBlockedOnReleaseLatch(Set<Thread> before) {
+        Thread.getAllStackTraces().findAll { thread, trace ->
             !(thread in before) && thread.name.startsWith("pool-") &&
                     trace.any { it.className == 'java.util.concurrent.CountDownLatch' && it.methodName == 'await' }
-        }?.key
+        }.keySet() as List<Thread>
     }
     def "region added to the node attributes with ALL_REGIONS specified"() {
         given:
