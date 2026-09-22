@@ -28,6 +28,7 @@ import com.dtolabs.rundeck.core.common.NodeEntryImpl;
 import com.dtolabs.rundeck.core.common.NodeSetImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.AvailabilityZone;
 import software.amazon.awssdk.services.ec2.model.DescribeAvailabilityZonesResponse;
@@ -127,7 +128,19 @@ class InstanceToNodeMapper {
                         try {
                             instances.addAll(future.get());
                         } catch (ExecutionException e) {
-                            throw new RuntimeException(e);
+                            // getInstancesByRegion() only lets an exception reach this future when its
+                            // own region query was interrupted -- every other per-region failure is
+                            // already caught and recorded there instead of thrown. invokeAll() above
+                            // already waited for every task to finish, so the other futures here are
+                            // already-completed, successful results: losing them because one region was
+                            // interrupted would defeat per-region isolation, so keep collecting instead
+                            // of aborting the loop.
+                            Throwable cause = e.getCause();
+                            if (cause instanceof RuntimeException && cause.getCause() instanceof InterruptedException) {
+                                Thread.currentThread().interrupt();
+                            } else {
+                                logger.warn("Unexpected error retrieving a region query result", e);
+                            }
                         }
                     }
                     logger.info("Finished querying {} regions in parallel", endpoints.size());
@@ -152,6 +165,17 @@ class InstanceToNodeMapper {
                 for (String endpoint : endpoints) {
                     instances.addAll(getInstancesByRegion(endpoint));
                 }
+            }
+            // Every endpoint failed (e.g. expired/invalid credentials, not just one region denied):
+            // unlike an ordinary partial failure, there are no other regions' nodes to preserve here,
+            // so throw instead of returning an empty NodeSetImpl. This matches the pre-isolation
+            // behavior of propagating the failure, so callers like EC2ResourceModelSource#getNodes()
+            // leave any previously-cached, stale-but-valid node set in place rather than wiping it to
+            // empty on a total outage.
+            if (!endpoints.isEmpty() && lastQueryErrors.size() == endpoints.size()) {
+                throw new RuntimeException(
+                        "All " + endpoints.size() + " EC2 region queries failed: "
+                                + String.join("; ", lastQueryErrors));
             }
         }
         else if(region != null){
@@ -232,14 +256,21 @@ class InstanceToNodeMapper {
             // ALL_REGIONS) must not discard nodes already fetched from other, working regions.
             // Both the sequential loop and the parallel-query Callables in performQuery() route
             // through this method, so isolating the failure here covers both call paths.
-            String detail = e.getMessage();
-            detail = (null != detail && !detail.isEmpty()) ? detail : e.toString();
-            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detail;
-            // WARN without the stack trace: under ALL_REGIONS with a region-restricted IAM policy,
-            // every disallowed region logs here on every refresh, and a full trace per region per
-            // cycle is noisy. The trace is still available at DEBUG for diagnostics.
-            logger.warn(message);
-            logger.debug(message, e);
+            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detailOf(e);
+            if (e instanceof SdkException) {
+                // WARN without the stack trace: under ALL_REGIONS with a region-restricted IAM
+                // policy, every disallowed region logs here on every refresh, and a full trace per
+                // region per cycle is noisy. The trace is still available at DEBUG for diagnostics.
+                logger.warn(message);
+                logger.debug(message, e);
+            } else {
+                // Not a recognized AWS SDK failure (access denied, throttling, network, etc) --
+                // more likely a plugin defect (e.g. an NPE from an unexpected response shape) than a
+                // routine per-region error. Still isolated so other regions aren't affected, but
+                // logged at ERROR with a full stack trace so a real bug isn't mistaken for, and
+                // buried among, routine AWS unavailability.
+                logger.error(message, e);
+            }
             lastQueryErrors.add(message);
         }
 
@@ -252,6 +283,17 @@ class InstanceToNodeMapper {
      */
     public List<String> getQueryErrors() {
         return new ArrayList<>(lastQueryErrors);
+    }
+
+    /**
+     * A throwable's message, falling back to {@link Throwable#toString()} when the message is
+     * null or blank (e.g. a {@link NullPointerException} with no message). Shared with {@link
+     * EC2ResourceModelSource}'s own error-reporting catch blocks so the fallback doesn't drift
+     * between the two.
+     */
+    static String detailOf(Throwable e) {
+        String detail = e.getMessage();
+        return (null != detail && !detail.isEmpty()) ? detail : e.toString();
     }
 
     private Set<Ec2Instance> query(final Ec2Client ec2, final DescribeInstancesRequest request) {

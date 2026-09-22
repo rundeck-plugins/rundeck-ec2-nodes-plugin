@@ -106,6 +106,38 @@ class EC2ResourceModelSourceSpec extends Specification {
         errors[0].contains("us-west-1")
     }
 
+    def "a total per-region failure during a synchronous refresh preserves the previously cached nodes instead of wiping them to empty"() {
+        given: "synchronous loading, with nodes already cached from a prior successful refresh"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "true")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        def staleNodes = new NodeSetImpl()
+        rms.iNodeSet = staleNodes
+        // simulate a prior refresh long enough ago that the next getNodes() call needs a new one
+        rms.lastRefresh = 1L
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw new RuntimeException("All 2 EC2 region queries failed: access denied") }
+        }
+
+        when: "a refresh runs and every region fails (e.g. expired credentials), unlike an ordinary partial failure"
+        try {
+            rms.getNodes()
+        } catch (RuntimeException ignored) {
+            // expected: the total-outage failure propagates, matching pre-isolation behavior
+        } finally {
+            rms.close()
+        }
+
+        then: "the stale node set from the prior refresh is still in place, not wiped to empty"
+        rms.iNodeSet.is(staleNodes)
+
+        and: "the failure is still visible via getModelSourceErrors()"
+        rms.getModelSourceErrors().size() == 1
+        rms.getModelSourceErrors()[0].contains("All 2 EC2 region queries failed")
+    }
+
     def "constructor validates configuration before allocating resources or contacting Services"() {
         given: "an access key configured without its secret key or storage path"
         def config = createDefaultConfig()

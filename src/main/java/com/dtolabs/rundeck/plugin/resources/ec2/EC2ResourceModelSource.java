@@ -399,10 +399,10 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                     lastQueryError = joinQueryErrors(mapper.getQueryErrors());
                     return result;
                 } catch (Exception e) {
-                    String message = e.getMessage();
+                    String message = InstanceToNodeMapper.detailOf(e);
                     logger.warn("Error performing query: " + message, e);
                     // recorded at completion time, on the executor thread
-                    lastQueryError = (null != message && !message.isEmpty()) ? message : e.toString();
+                    lastQueryError = message;
                     throw e;
                 } finally {
                     // stamped at completion time, on the executor thread
@@ -415,6 +415,13 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             try {
                 iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
                 lastQueryError = joinQueryErrors(mapper.getQueryErrors());
+            } catch (RuntimeException e) {
+                // e.g. every region failed under ALL_REGIONS/multi-endpoint: iNodeSet is left as-is
+                // (any previously-cached, stale-but-valid nodes are preserved) since the assignment
+                // above never completes, but the failure should still be visible via
+                // getModelSourceErrors() rather than only surfacing as this rethrown exception.
+                lastQueryError = InstanceToNodeMapper.detailOf(e);
+                throw e;
             } finally {
                 // stamped even on failure, so a broken config doesn't retry with no cooldown
                 lastRefresh = System.currentTimeMillis();

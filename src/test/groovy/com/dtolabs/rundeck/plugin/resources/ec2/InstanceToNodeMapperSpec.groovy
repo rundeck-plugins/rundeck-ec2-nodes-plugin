@@ -413,6 +413,140 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.getQueryErrors()[0].contains("us-west-1")
     }
 
+    def "every region denied under multiple endpoints throws rather than returning an empty result"() {
+        given: "both us-west-1 and us-east-1 denied, sequential querying"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-east-1")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "a total outage happens, unlike an ordinary partial failure there is nothing to preserve"
+        mapper.performQuery(false)
+
+        then: "the failure propagates instead of yielding an empty-but-successful result"
+        RuntimeException ex = thrown()
+        ex.message.contains("us-west-1")
+        ex.message.contains("us-east-1")
+    }
+
+    def "every region denied under parallel querying throws rather than returning an empty result"() {
+        given: "the same total-outage setup, queried in parallel"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-east-1")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        mapper.performQuery(true)
+
+        then:
+        RuntimeException ex = thrown()
+        ex.message.contains("us-west-1")
+        ex.message.contains("us-east-1")
+    }
+
+    def "isolation still applies when a region's failure is not a recognized AWS SDK exception"() {
+        given: "us-west-1 fails with a plugin-side bug (e.g. an NPE), us-east-1 working"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new NullPointerException()
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        def instances = mapper.performQuery(false)
+
+        then: "the working region's node is still returned; a non-AWS failure doesn't abort the batch"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the failure is still reported"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("us-west-1")
+    }
+
+    def "an interrupted region query does not discard already-successful results from other regions during parallel querying"() {
+        given: "one endpoint that hangs until released (to be interrupted), and a second that returns a node immediately"
+        def startedLatch = new java.util.concurrent.CountDownLatch(1)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
+        def instances = null
+        Thread queryThread = new Thread({ -> instances = mapper.performQuery(true) })
+
+        when: "the query starts, and once us-west-1's call is blocked, only its own worker thread is interrupted"
+        queryThread.start()
+        boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        new PollingConditions(timeout: 5).eventually {
+            assert workerBlockedOnReleaseLatch(threadsBefore) != null
+        }
+        Thread blockedWorker = workerBlockedOnReleaseLatch(threadsBefore)
+        blockedWorker.interrupt()
+        queryThread.join(5000)
+
+        then: "the blocked region's own worker thread was found and interrupted, not the calling thread"
+        reachedBlockedRegionCall
+        blockedWorker != null
+        !queryThread.isAlive()
+
+        and: "us-east-1's already-successful result is not discarded just because us-west-1's worker was interrupted"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        cleanup: "release the mock call in case the interrupt was somehow missed"
+        releaseLatch.countDown()
+    }
+
     def "parallel query still terminates promptly, without leaking its inner thread pool, when interrupted mid-flight"() {
         given: "one endpoint that hangs until released, and a second that returns immediately"
         def startedLatch = new java.util.concurrent.CountDownLatch(1)
@@ -468,6 +602,18 @@ class InstanceToNodeMapperSpec extends Specification {
     private static List<String> leakedPoolThreads(Set<Thread> before) {
         Thread.getAllStackTraces().keySet()
                 .findAll { !(it in before) && it.alive && it.name.startsWith("pool-") }*.name
+    }
+
+    /**
+     * The new pool worker thread, if any, that's actually blocked inside {@code releaseLatch.await()}
+     * -- not just any new pool thread in {@code WAITING} state, since an idle worker parked on the
+     * pool's internal work queue is in that same state and would otherwise be matched instead.
+     */
+    private static Thread workerBlockedOnReleaseLatch(Set<Thread> before) {
+        Thread.getAllStackTraces().find { thread, trace ->
+            !(thread in before) && thread.name.startsWith("pool-") &&
+                    trace.any { it.className == 'java.util.concurrent.CountDownLatch' && it.methodName == 'await' }
+        }?.key
     }
     def "region added to the node attributes with ALL_REGIONS specified"() {
         given:
