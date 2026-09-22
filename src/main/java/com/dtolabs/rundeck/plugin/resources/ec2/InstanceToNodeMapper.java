@@ -153,7 +153,17 @@ class InstanceToNodeMapper {
                                 // it would otherwise look like a genuine, if empty, successful result.
                                 interruptedEndpoints++;
                             } else {
-                                logger.warn("Unexpected error retrieving a region query result", e);
+                                // getInstancesByRegion() only catches Exception, not Error, so a truly
+                                // unexpected failure (e.g. AssertionError, LinkageError) reaches here
+                                // uncaught -- and unlike every other per-region failure, was never
+                                // recorded in lastQueryErrors there. Record it here too, the same way,
+                                // so it isn't silently dropped from both the error report and the
+                                // total-failure check below (which would otherwise see it as neither a
+                                // recorded failure nor a genuine success).
+                                Throwable actual = null != cause ? cause : e;
+                                String message = "Unexpected error retrieving a region query result: " + detailOf(actual);
+                                logger.error(message, e);
+                                lastQueryErrors.add(message);
                             }
                         }
                     }
