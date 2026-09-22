@@ -124,6 +124,13 @@ class InstanceToNodeMapper {
                     }
                     logger.info("Querying {} regions in parallel", endpoints.size());
                     List<Future<Set<Ec2Instance>>> futures = executor.invokeAll(tasks);
+                    // Restoring the interrupt flag as soon as one interrupted future is seen (rather
+                    // than after the whole loop) would make a *later* future.get() in this same loop
+                    // throw InterruptedException immediately -- futures come from a HashSet, so their
+                    // order isn't stable, and that would drop whichever already-completed regions'
+                    // results hadn't been read yet. So only record it here, and restore the flag once
+                    // every future has been collected.
+                    boolean regionInterrupted = false;
                     for (Future<Set<Ec2Instance>> future : futures) {
                         try {
                             instances.addAll(future.get());
@@ -137,11 +144,14 @@ class InstanceToNodeMapper {
                             // of aborting the loop.
                             Throwable cause = e.getCause();
                             if (cause instanceof RuntimeException && cause.getCause() instanceof InterruptedException) {
-                                Thread.currentThread().interrupt();
+                                regionInterrupted = true;
                             } else {
                                 logger.warn("Unexpected error retrieving a region query result", e);
                             }
                         }
+                    }
+                    if (regionInterrupted) {
+                        Thread.currentThread().interrupt();
                     }
                     logger.info("Finished querying {} regions in parallel", endpoints.size());
                 } catch (InterruptedException e) {
