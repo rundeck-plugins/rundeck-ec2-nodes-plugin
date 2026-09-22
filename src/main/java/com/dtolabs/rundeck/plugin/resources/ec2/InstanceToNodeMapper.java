@@ -307,13 +307,13 @@ class InstanceToNodeMapper {
 
     /**
      * A throwable's message, falling back to {@link Throwable#toString()} when the message is
-     * null or blank (e.g. a {@link NullPointerException} with no message). Shared with {@link
-     * EC2ResourceModelSource}'s own error-reporting catch blocks so the fallback doesn't drift
-     * between the two.
+     * null or blank (e.g. a {@link NullPointerException} with no message, or one that's
+     * whitespace-only). Shared with {@link EC2ResourceModelSource}'s own error-reporting catch
+     * blocks so the fallback doesn't drift between the two.
      */
     static String detailOf(Throwable e) {
         String detail = e.getMessage();
-        return (null != detail && !detail.isEmpty()) ? detail : e.toString();
+        return (null != detail && !detail.isBlank()) ? detail : e.toString();
     }
 
     private Set<Ec2Instance> query(final Ec2Client ec2, final DescribeInstancesRequest request) {

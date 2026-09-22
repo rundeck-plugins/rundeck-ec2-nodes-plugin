@@ -24,6 +24,19 @@ import spock.lang.Unroll
  * @since 12/16/16
  */
 class InstanceToNodeMapperSpec extends Specification {
+    @Unroll
+    def "detailOf falls back to toString() for a #description message"() {
+        expect:
+        InstanceToNodeMapper.detailOf(cause) == expected
+
+        where:
+        description       | cause                              | expected
+        "normal"          | new RuntimeException("boom")       | "boom"
+        "missing"         | new RuntimeException()             | new RuntimeException().toString()
+        "blank"           | new RuntimeException("")           | new RuntimeException("").toString()
+        "whitespace-only" | new RuntimeException("   ")        | new RuntimeException("   ").toString()
+    }
+
     def "single selector valid properties"() {
         given:
         def i = Ec2Instance.builder(mkInstance())

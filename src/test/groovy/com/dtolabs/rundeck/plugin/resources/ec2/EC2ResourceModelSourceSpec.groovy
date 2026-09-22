@@ -47,9 +47,10 @@ class EC2ResourceModelSourceSpec extends Specification {
         errors[0].contains("RuntimeException")
 
         where:
-        description | cause
-        "no"        | new RuntimeException()
-        "blank"     | new RuntimeException("")
+        description        | cause
+        "no"                | new RuntimeException()
+        "blank"             | new RuntimeException("")
+        "whitespace-only"   | new RuntimeException("   ")
     }
 
     def "getModelSourceErrors reports partial per-region failures after a successful synchronous query"() {
