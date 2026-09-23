@@ -539,28 +539,61 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.getQueryErrors()[0].contains("us-west-1")
     }
 
-    def "a fatal VM error from one region during parallel querying propagates instead of being isolated"() {
-        given: "us-west-1 fails with a VirtualMachineError, which must not be treated as an ordinary recoverable region failure"
+    def "a fatal VM error from one region during parallel querying cancels the other region work and propagates promptly"() {
+        given: "one region is blocked in an AWS call while another hits a fatal JVM error"
+        def startedLatch = new java.util.concurrent.CountDownLatch(1)
+        def allowFatalLatch = new java.util.concurrent.CountDownLatch(1)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                throw new OutOfMemoryError("simulated OOM")
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
             }
             getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
-                Mock(Ec2Client) {
-                    describeInstances(_) >> DescribeInstancesResponse.builder().build()
-                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
-                }
+                startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                allowFatalLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                throw new OutOfMemoryError("simulated OOM")
             }
         }
         def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
         mapper.setEndpoint(endpoints.join(', '))
+        Throwable caught = null
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
+        Thread queryThread = new Thread({ ->
+            try {
+                mapper.performQuery(true)
+            } catch (Throwable t) {
+                caught = t
+            }
+        })
 
-        when: "swallowing this and continuing to assemble a partial node set could leave the process in an unsafe state"
-        mapper.performQuery(true)
+        when: "the blocked region is in flight before the fatal error is released"
+        queryThread.start()
+        boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).size() == 1
+        }
+        allowFatalLatch.countDown()
+        queryThread.join(5000)
 
-        then: "it propagates immediately rather than being recorded as a per-region failure"
-        thrown(OutOfMemoryError)
+        then: "the fatal error still propagates"
+        reachedBlockedRegionCall
+        !queryThread.isAlive()
+        caught instanceof OutOfMemoryError
+
+        and: "the other region task was cancelled rather than left blocked until manual release"
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).isEmpty()
+        }
+
+        cleanup:
+        releaseLatch.countDown()
     }
 
     def "every region failing with an Error under parallel querying throws rather than returning an empty result"() {

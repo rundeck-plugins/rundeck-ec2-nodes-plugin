@@ -116,39 +116,38 @@ class InstanceToNodeMapper {
             if (queryNodeInstancesInParallel && !endpoints.isEmpty()) {
                 logger.info("Creating thread pool for {} regions", endpoints.size());
                 ExecutorService executor = Executors.newFixedThreadPool(endpoints.size());
+                List<Future<Set<Ec2Instance>>> futures = new ArrayList<>(endpoints.size());
                 try {
-                    // A List (not a Set) so its iteration order matches invokeAll()'s returned
-                    // Futures one-for-one, letting the future/endpoint be paired up below to name
-                    // the failed region in an unexpected-error message.
-                    List<Callable<Set<Ec2Instance>>> tasks = new ArrayList<>();
+                    Map<Future<Set<Ec2Instance>>, String> futureEndpoints = new HashMap<>();
+                    CompletionService<Set<Ec2Instance>> completionService = new ExecutorCompletionService<>(executor);
                     for (String endpoint : endpoints) {
-                        tasks.add(new Callable<Set<Ec2Instance>>() {
+                        Future<Set<Ec2Instance>> future = completionService.submit(new Callable<Set<Ec2Instance>>() {
                             @Override
                             public Set<Ec2Instance> call() throws Exception {
                                 return getInstancesByRegion(endpoint);
                             }
                         });
+                        futures.add(future);
+                        futureEndpoints.put(future, endpoint);
                     }
                     logger.info("Querying {} regions in parallel", endpoints.size());
-                    List<Future<Set<Ec2Instance>>> futures = executor.invokeAll(tasks);
                     // Restoring the interrupt flag as soon as one interrupted future is seen (rather
                     // than after the whole loop) would make a *later* future.get() in this same loop
                     // throw InterruptedException immediately, dropping whichever already-completed
                     // regions' results hadn't been read yet. So only record it here, and restore the
                     // flag once every future has been collected.
                     for (int i = 0; i < futures.size(); i++) {
-                        Future<Set<Ec2Instance>> future = futures.get(i);
-                        String endpoint = endpoints.get(i);
+                        Future<Set<Ec2Instance>> future = completionService.take();
+                        String endpoint = futureEndpoints.get(future);
                         try {
                             instances.addAll(future.get());
                         } catch (ExecutionException e) {
                             // getInstancesByRegion() only lets an exception reach this future when its
                             // own region query was interrupted -- every other per-region failure is
-                            // already caught and recorded there instead of thrown. invokeAll() above
-                            // already waited for every task to finish, so the other futures here are
-                            // already-completed, successful results: losing them because one region was
-                            // interrupted would defeat per-region isolation, so keep collecting instead
-                            // of aborting the loop.
+                            // already caught and recorded there instead of thrown. Because completions
+                            // are consumed one-by-one as they finish, keep collecting after an
+                            // interrupted region so already-finished or later-successful regions still
+                            // contribute nodes instead of being discarded.
                             Throwable cause = e.getCause();
                             if (cause instanceof RuntimeException && cause.getCause() instanceof InterruptedException) {
                                 // Counted (not just flagged) so the total-failure check below can tell
@@ -165,8 +164,10 @@ class InstanceToNodeMapper {
                                 if (actual instanceof VirtualMachineError || actual instanceof ThreadDeath) {
                                     // A fatal JVM/thread condition, not an ordinary region failure --
                                     // swallowing it and continuing to assemble a partial node set could
-                                    // leave the process in an unsafe state. Let it propagate immediately
-                                    // instead of isolating it like every other per-region error.
+                                    // leave the process in an unsafe state. Cancel the other region
+                                    // tasks first, then let it propagate immediately instead of
+                                    // isolating it like every other per-region error.
+                                    cancelPendingRegionQueries(futures);
                                     throw (Error) actual;
                                 }
                                 // Record it the same way getInstancesByRegion() would have, endpoint
@@ -185,6 +186,7 @@ class InstanceToNodeMapper {
                     }
                     logger.info("Finished querying {} regions in parallel", endpoints.size());
                 } catch (InterruptedException e) {
+                    cancelPendingRegionQueries(futures);
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 } finally {
@@ -318,6 +320,14 @@ class InstanceToNodeMapper {
         }
 
         return allInstances;
+    }
+
+    private static void cancelPendingRegionQueries(final List<Future<Set<Ec2Instance>>> futures) {
+        for (Future<Set<Ec2Instance>> future : futures) {
+            if (!future.isDone()) {
+                future.cancel(true);
+            }
+        }
     }
 
     /**
