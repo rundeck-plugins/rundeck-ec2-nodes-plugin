@@ -117,6 +117,11 @@ class InstanceToNodeMapper {
                 logger.info("Creating thread pool for {} regions", endpoints.size());
                 ExecutorService executor = Executors.newFixedThreadPool(endpoints.size());
                 List<Future<Set<Ec2Instance>>> futures = new ArrayList<>(endpoints.size());
+                // Set right before cancelling and immediately propagating a fatal error or an
+                // interrupt of the calling thread -- both cases already cancel the pending region
+                // tasks below, so the finally block shouldn't also block this thread for up to 90
+                // seconds waiting for possibly-unresponsive workers to actually exit.
+                boolean promptShutdown = false;
                 try {
                     Map<Future<Set<Ec2Instance>>, String> futureEndpoints = new HashMap<>();
                     CompletionService<Set<Ec2Instance>> completionService = new ExecutorCompletionService<>(executor);
@@ -167,6 +172,7 @@ class InstanceToNodeMapper {
                                     // leave the process in an unsafe state. Cancel the other region
                                     // tasks first, then let it propagate immediately instead of
                                     // isolating it like every other per-region error.
+                                    promptShutdown = true;
                                     cancelPendingRegionQueries(futures);
                                     throw (Error) actual;
                                 }
@@ -186,21 +192,32 @@ class InstanceToNodeMapper {
                     }
                     logger.info("Finished querying {} regions in parallel", endpoints.size());
                 } catch (InterruptedException e) {
+                    promptShutdown = true;
                     cancelPendingRegionQueries(futures);
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 } finally {
                     // always release the per-region pool, whatever happened above
                     executor.shutdown();
-                    try {
-                        logger.debug("Waiting up to {} seconds for the region query thread pool to terminate", 90);
-                        if (!executor.awaitTermination(90, TimeUnit.SECONDS)) {
-                            logger.warn("Region query thread pool did not terminate promptly; forcing shutdown");
-                        }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    } finally {
+                    if (promptShutdown) {
+                        // A fatal error or interrupt is already propagating immediately, and the
+                        // pending region tasks were already cancelled above -- cancellation is only
+                        // best-effort (a worker can ignore interruption or stay blocked in an AWS
+                        // call), so waiting here for up to 90 seconds for them to actually exit would
+                        // defeat "immediately" and stall this thread right along with the fatal
+                        // condition it's trying to propagate.
                         executor.shutdownNow();
+                    } else {
+                        try {
+                            logger.debug("Waiting up to {} seconds for the region query thread pool to terminate", 90);
+                            if (!executor.awaitTermination(90, TimeUnit.SECONDS)) {
+                                logger.warn("Region query thread pool did not terminate promptly; forcing shutdown");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            executor.shutdownNow();
+                        }
                     }
                 }
             } else {

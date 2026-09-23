@@ -542,7 +542,11 @@ class InstanceToNodeMapperSpec extends Specification {
     def "a fatal VM error from one region during parallel querying cancels the other region work and propagates promptly"() {
         given: "one region is blocked in an AWS call while another hits a fatal JVM error"
         def startedLatch = new java.util.concurrent.CountDownLatch(1)
-        def allowFatalLatch = new java.util.concurrent.CountDownLatch(1)
+        // A Semaphore, not a CountDownLatch like releaseLatch below: workersBlockedOnReleaseLatch()
+        // matches any thread blocked in CountDownLatch.await(), so if this were a CountDownLatch too,
+        // us-east-1 waiting here at the same time us-west-1 is blocked on releaseLatch would make that
+        // helper see 2 blocked workers instead of 1, racing the "size() == 1" check below.
+        def allowFatalLatch = new java.util.concurrent.Semaphore(0)
         def releaseLatch = new java.util.concurrent.CountDownLatch(1)
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -557,7 +561,7 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
                 startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
-                allowFatalLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                allowFatalLatch.tryAcquire(5, java.util.concurrent.TimeUnit.SECONDS)
                 throw new OutOfMemoryError("simulated OOM")
             }
         }
@@ -579,7 +583,7 @@ class InstanceToNodeMapperSpec extends Specification {
         new PollingConditions(timeout: 5).eventually {
             assert workersBlockedOnReleaseLatch(threadsBefore).size() == 1
         }
-        allowFatalLatch.countDown()
+        allowFatalLatch.release()
         queryThread.join(5000)
 
         then: "the fatal error still propagates"
@@ -594,6 +598,53 @@ class InstanceToNodeMapperSpec extends Specification {
 
         cleanup:
         releaseLatch.countDown()
+    }
+
+    def "a fatal VM error propagates promptly even when a sibling region worker ignores its cancellation"() {
+        given: "us-west-1 ignores interruption and blocks indefinitely, unlike the latch-based mocks elsewhere in this file that respond to cancel(true)"
+        def blockLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        // Cancellation via future.cancel(true) is only best-effort: a worker blocked
+                        // in an uninterruptible call (e.g. raw socket I/O) can simply ignore the
+                        // interrupt and keep running, which this simulates by swallowing it and
+                        // retrying rather than letting it propagate.
+                        while (true) {
+                            try {
+                                blockLatch.await()
+                                break
+                            } catch (InterruptedException ignored) {
+                            }
+                        }
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                throw new OutOfMemoryError("simulated OOM")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "us-west-1's worker never actually terminates for the rest of this test"
+        long start = System.currentTimeMillis()
+        long elapsedMs = -1L
+        try {
+            mapper.performQuery(true)
+        } finally {
+            elapsedMs = System.currentTimeMillis() - start
+        }
+
+        then: "the fatal error still propagates, and promptly -- not after waiting anywhere near the 90-second termination timeout for the unresponsive worker"
+        thrown(OutOfMemoryError)
+        elapsedMs < 5000
+
+        cleanup:
+        blockLatch.countDown()
     }
 
     def "every region failing with an Error under parallel querying throws rather than returning an empty result"() {
