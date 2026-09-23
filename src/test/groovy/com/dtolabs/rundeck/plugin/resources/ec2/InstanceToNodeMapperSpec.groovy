@@ -360,7 +360,8 @@ class InstanceToNodeMapperSpec extends Specification {
         instances.getNode("aninstanceId-us-east-1") != null
     }
 
-    def "one region denied under multiple endpoints still returns the other region's nodes"() {
+    @Unroll
+    def "one region denied still returns the other region's nodes (parallel: #parallel)"() {
         given: "us-west-1 denied (e.g. an IAM policy restricting ec2:* to us-east-1), us-east-1 working"
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -381,7 +382,7 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.setEndpoint(endpoints.join(', '))
 
         when:
-        def instances = mapper.performQuery(false)
+        def instances = mapper.performQuery(parallel)
 
         then: "the working region's node is still returned, not discarded"
         instances != null
@@ -391,43 +392,14 @@ class InstanceToNodeMapperSpec extends Specification {
         and: "the denied region's failure is reported rather than lost silently"
         mapper.getQueryErrors().size() == 1
         mapper.getQueryErrors()[0].contains("us-west-1")
+
+        where:
+        parallel << [true, false]
     }
 
-    def "one region denied under parallel querying still returns the other region's nodes"() {
-        given: "the same denied/working split, queried in parallel"
-        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
-        EC2Supplier supplier = Mock(EC2Supplier) {
-            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
-            }
-            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
-                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
-                Mock(Ec2Client) {
-                    describeInstances(_) >> DescribeInstancesResponse.builder()
-                            .reservations(Reservation.builder().instances(instance).build())
-                            .build()
-                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
-                }
-            }
-        }
-        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
-        mapper.setEndpoint(endpoints.join(', '))
-
-        when:
-        def instances = mapper.performQuery(true)
-
-        then: "the working region's node is still returned, not discarded"
-        instances != null
-        instances.getNode("aninstanceId-us-east-1") != null
-        instances.getNodeNames().size() == 1
-
-        and: "the denied region's failure is reported rather than lost silently"
-        mapper.getQueryErrors().size() == 1
-        mapper.getQueryErrors()[0].contains("us-west-1")
-    }
-
-    def "every region denied under multiple endpoints throws rather than returning an empty result"() {
-        given: "both us-west-1 and us-east-1 denied, sequential querying"
+    @Unroll
+    def "every region denied throws rather than returning an empty result (parallel: #parallel)"() {
+        given: "both us-west-1 and us-east-1 denied"
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
@@ -441,35 +413,15 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.setEndpoint(endpoints.join(', '))
 
         when: "a total outage happens, unlike an ordinary partial failure there is nothing to preserve"
-        mapper.performQuery(false)
+        mapper.performQuery(parallel)
 
         then: "the failure propagates instead of yielding an empty-but-successful result"
         RuntimeException ex = thrown()
         ex.message.contains("us-west-1")
         ex.message.contains("us-east-1")
-    }
 
-    def "every region denied under parallel querying throws rather than returning an empty result"() {
-        given: "the same total-outage setup, queried in parallel"
-        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
-        EC2Supplier supplier = Mock(EC2Supplier) {
-            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
-            }
-            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
-                throw new RuntimeException("UnauthorizedOperation: not authorized for us-east-1")
-            }
-        }
-        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
-        mapper.setEndpoint(endpoints.join(', '))
-
-        when:
-        mapper.performQuery(true)
-
-        then:
-        RuntimeException ex = thrown()
-        ex.message.contains("us-west-1")
-        ex.message.contains("us-east-1")
+        where:
+        parallel << [true, false]
     }
 
     def "isolation still applies when a region's failure is not a recognized AWS SDK exception"() {
@@ -505,7 +457,8 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.getQueryErrors()[0].contains("us-west-1")
     }
 
-    def "an Error (not just an Exception) from one region during parallel querying is still isolated and reported"() {
+    @Unroll
+    def "an Error (not just an Exception) from one region is still isolated and reported (parallel: #parallel)"() {
         given: "us-west-1 fails with an Error that getInstancesByRegion()'s own catch(Exception) can't see, us-east-1 working"
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -525,8 +478,8 @@ class InstanceToNodeMapperSpec extends Specification {
         def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
         mapper.setEndpoint(endpoints.join(', '))
 
-        when: "this only reaches the parallel future-loop's own catch, not getInstancesByRegion()'s"
-        def instances = mapper.performQuery(true)
+        when: "without isolating it, the Error would abort the whole query instead of just this one region"
+        def instances = mapper.performQuery(parallel)
 
         then: "the working region's node is still returned; the Error doesn't abort the batch"
         instances != null
@@ -537,6 +490,9 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.getQueryErrors().size() == 1
         mapper.getQueryErrors()[0].contains("boom")
         mapper.getQueryErrors()[0].contains("us-west-1")
+
+        where:
+        parallel << [true, false]
     }
 
     def "a fatal VM error from one region during parallel querying cancels the other region work and propagates promptly"() {
@@ -647,7 +603,8 @@ class InstanceToNodeMapperSpec extends Specification {
         blockLatch.countDown()
     }
 
-    def "every region failing with an Error under parallel querying throws rather than returning an empty result"() {
+    @Unroll
+    def "every region failing with an Error throws rather than returning an empty result (parallel: #parallel)"() {
         given: "both regions fail with an Error, which getInstancesByRegion()'s own catch(Exception) can't see"
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -659,64 +616,14 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.setEndpoint(endpoints.join(', '))
 
         when: "without counting these as failed endpoints, this would look like an empty-but-successful query"
-        mapper.performQuery(true)
+        mapper.performQuery(parallel)
 
         then: "the total failure propagates instead"
         RuntimeException ex = thrown()
         ex.message.contains("boom")
-    }
 
-    def "an Error (not just an Exception) from one region during sequential querying is still isolated and reported"() {
-        given: "us-west-1 fails with an Error that getInstancesByRegion()'s own catch(Exception) can't see, us-east-1 working -- same as the parallel-querying case, but sequential has no futures/ExecutionException layer of its own to isolate it"
-        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
-        EC2Supplier supplier = Mock(EC2Supplier) {
-            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                throw new AssertionError("boom")
-            }
-            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
-                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
-                Mock(Ec2Client) {
-                    describeInstances(_) >> DescribeInstancesResponse.builder()
-                            .reservations(Reservation.builder().instances(instance).build())
-                            .build()
-                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
-                }
-            }
-        }
-        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
-        mapper.setEndpoint(endpoints.join(', '))
-
-        when: "without this, the Error would abort performQuery() entirely instead of just this one region"
-        def instances = mapper.performQuery(false)
-
-        then: "the working region's node is still returned; the Error doesn't abort the whole query"
-        instances != null
-        instances.getNode("aninstanceId-us-east-1") != null
-        instances.getNodeNames().size() == 1
-
-        and: "the Error is still reported, not silently dropped, and names the region it came from"
-        mapper.getQueryErrors().size() == 1
-        mapper.getQueryErrors()[0].contains("boom")
-        mapper.getQueryErrors()[0].contains("us-west-1")
-    }
-
-    def "every region failing with an Error under sequential querying throws rather than returning an empty result"() {
-        given: "both regions fail with an Error, which getInstancesByRegion()'s own catch(Exception) can't see"
-        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
-        EC2Supplier supplier = Mock(EC2Supplier) {
-            getEC2ForEndpoint(_) >> {
-                throw new AssertionError("boom")
-            }
-        }
-        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
-        mapper.setEndpoint(endpoints.join(', '))
-
-        when: "without counting these as failed endpoints, this would look like an empty-but-successful query"
-        mapper.performQuery(false)
-
-        then: "the total failure propagates instead"
-        RuntimeException ex = thrown()
-        ex.message.contains("boom")
+        where:
+        parallel << [true, false]
     }
 
     def "a fatal VM error from one region during sequential querying propagates instead of being isolated"() {

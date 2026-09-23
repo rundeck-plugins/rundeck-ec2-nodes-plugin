@@ -109,21 +109,20 @@ class InstanceToNodeMapper {
 
         if(getEndpoint() != null) {
             List<String> endpoints = determineEndpoints();
-            // Only ever incremented in the parallel branch below: the sequential branch's
-            // getInstancesByRegion() propagates an interrupt immediately instead of catching it, so
-            // it never reaches the total-failure check after this if/else.
-            int interruptedEndpoints = 0;
             if (queryNodeInstancesInParallel && !endpoints.isEmpty()) {
                 logger.info("Creating thread pool for {} regions", endpoints.size());
                 ExecutorService executor = Executors.newFixedThreadPool(endpoints.size());
-                List<Future<Set<Ec2Instance>>> futures = new ArrayList<>(endpoints.size());
+                // The one collection of submitted futures: also doubles as the set to cancel on a
+                // fatal error or interrupt, since ExecutorCompletionService.take() returns futures in
+                // completion order, not submission order, so a future needs to be mapped back to its
+                // endpoint.
+                Map<Future<Set<Ec2Instance>>, String> futureEndpoints = new HashMap<>();
                 // Set right before cancelling and immediately propagating a fatal error or an
                 // interrupt of the calling thread -- both cases already cancel the pending region
                 // tasks below, so the finally block shouldn't also block this thread for up to 90
                 // seconds waiting for possibly-unresponsive workers to actually exit.
                 boolean promptShutdown = false;
                 try {
-                    Map<Future<Set<Ec2Instance>>, String> futureEndpoints = new HashMap<>();
                     CompletionService<Set<Ec2Instance>> completionService = new ExecutorCompletionService<>(executor);
                     for (String endpoint : endpoints) {
                         Future<Set<Ec2Instance>> future = completionService.submit(new Callable<Set<Ec2Instance>>() {
@@ -132,7 +131,6 @@ class InstanceToNodeMapper {
                                 return getInstancesByRegion(endpoint);
                             }
                         });
-                        futures.add(future);
                         futureEndpoints.put(future, endpoint);
                     }
                     logger.info("Querying {} regions in parallel", endpoints.size());
@@ -141,7 +139,8 @@ class InstanceToNodeMapper {
                     // throw InterruptedException immediately, dropping whichever already-completed
                     // regions' results hadn't been read yet. So only record it here, and restore the
                     // flag once every future has been collected.
-                    for (int i = 0; i < futures.size(); i++) {
+                    boolean anyInterrupted = false;
+                    for (int i = 0; i < endpoints.size(); i++) {
                         Future<Set<Ec2Instance>> future = completionService.take();
                         String endpoint = futureEndpoints.get(future);
                         try {
@@ -155,11 +154,11 @@ class InstanceToNodeMapper {
                             // contribute nodes instead of being discarded.
                             Throwable cause = e.getCause();
                             if (cause instanceof RuntimeException && cause.getCause() instanceof InterruptedException) {
-                                // Counted (not just flagged) so the total-failure check below can tell
-                                // an all-interrupted parallel query apart from an ordinary success --
-                                // an interrupted region never adds to lastQueryErrors, so without this
-                                // it would otherwise look like a genuine, if empty, successful result.
-                                interruptedEndpoints++;
+                                // Recorded in lastQueryErrors, like every other per-region failure, so
+                                // the total-failure check below can tell an all-interrupted parallel
+                                // query apart from a genuine, if empty, successful result.
+                                anyInterrupted = true;
+                                lastQueryErrors.add("Query for region '" + endpoint + "' was interrupted");
                             } else {
                                 // getInstancesByRegion() only catches Exception, not Error, so a truly
                                 // unexpected failure (e.g. AssertionError, LinkageError) reaches here
@@ -173,7 +172,7 @@ class InstanceToNodeMapper {
                                     // tasks first, then let it propagate immediately instead of
                                     // isolating it like every other per-region error.
                                     promptShutdown = true;
-                                    cancelPendingRegionQueries(futures);
+                                    cancelPendingRegionQueries(futureEndpoints.keySet());
                                     throw (Error) actual;
                                 }
                                 // Isolated the same way getInstancesByRegion() isolates an ordinary
@@ -184,13 +183,13 @@ class InstanceToNodeMapper {
                             }
                         }
                     }
-                    if (interruptedEndpoints > 0) {
+                    if (anyInterrupted) {
                         Thread.currentThread().interrupt();
                     }
                     logger.info("Finished querying {} regions in parallel", endpoints.size());
                 } catch (InterruptedException e) {
                     promptShutdown = true;
-                    cancelPendingRegionQueries(futures);
+                    cancelPendingRegionQueries(futureEndpoints.keySet());
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 } finally {
@@ -235,19 +234,15 @@ class InstanceToNodeMapper {
                     }
                 }
             }
-            // Every endpoint failed -- whether an ordinary per-region error (e.g. expired/invalid
-            // credentials) or, under parallel querying, an interrupt that never made it into
-            // lastQueryErrors -- and not just one region denied: unlike an ordinary partial failure,
+            // Every endpoint failed -- not just one region denied: unlike an ordinary partial failure,
             // there are no other regions' nodes to preserve here, so throw instead of returning an
             // empty NodeSetImpl. This matches the pre-isolation behavior of propagating the failure,
             // so callers like EC2ResourceModelSource#getNodes() leave any previously-cached,
             // stale-but-valid node set in place rather than wiping it to empty on a total outage.
-            if (!endpoints.isEmpty() && lastQueryErrors.size() + interruptedEndpoints == endpoints.size()) {
+            if (!endpoints.isEmpty() && lastQueryErrors.size() == endpoints.size()) {
                 throw new RuntimeException(
                         "All " + endpoints.size() + " EC2 region queries failed: "
-                                + (lastQueryErrors.isEmpty()
-                                        ? "query was interrupted"
-                                        : String.join("; ", lastQueryErrors)));
+                                + String.join("; ", lastQueryErrors));
             }
         }
         else if(region != null){
@@ -349,7 +344,7 @@ class InstanceToNodeMapper {
         return allInstances;
     }
 
-    private static void cancelPendingRegionQueries(final List<Future<Set<Ec2Instance>>> futures) {
+    private static void cancelPendingRegionQueries(final Collection<Future<Set<Ec2Instance>>> futures) {
         for (Future<Set<Ec2Instance>> future : futures) {
             if (!future.isDone()) {
                 future.cancel(true);
