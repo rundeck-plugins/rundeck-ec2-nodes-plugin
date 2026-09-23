@@ -117,7 +117,10 @@ class InstanceToNodeMapper {
                 logger.info("Creating thread pool for {} regions", endpoints.size());
                 ExecutorService executor = Executors.newFixedThreadPool(endpoints.size());
                 try {
-                    Set<Callable<Set<Ec2Instance>>> tasks = new HashSet<>();
+                    // A List (not a Set) so its iteration order matches invokeAll()'s returned
+                    // Futures one-for-one, letting the future/endpoint be paired up below to name
+                    // the failed region in an unexpected-error message.
+                    List<Callable<Set<Ec2Instance>>> tasks = new ArrayList<>();
                     for (String endpoint : endpoints) {
                         tasks.add(new Callable<Set<Ec2Instance>>() {
                             @Override
@@ -130,11 +133,12 @@ class InstanceToNodeMapper {
                     List<Future<Set<Ec2Instance>>> futures = executor.invokeAll(tasks);
                     // Restoring the interrupt flag as soon as one interrupted future is seen (rather
                     // than after the whole loop) would make a *later* future.get() in this same loop
-                    // throw InterruptedException immediately -- futures come from a HashSet, so their
-                    // order isn't stable, and that would drop whichever already-completed regions'
-                    // results hadn't been read yet. So only record it here, and restore the flag once
-                    // every future has been collected.
-                    for (Future<Set<Ec2Instance>> future : futures) {
+                    // throw InterruptedException immediately, dropping whichever already-completed
+                    // regions' results hadn't been read yet. So only record it here, and restore the
+                    // flag once every future has been collected.
+                    for (int i = 0; i < futures.size(); i++) {
+                        Future<Set<Ec2Instance>> future = futures.get(i);
+                        String endpoint = endpoints.get(i);
                         try {
                             instances.addAll(future.get());
                         } catch (ExecutionException e) {
@@ -156,12 +160,21 @@ class InstanceToNodeMapper {
                                 // getInstancesByRegion() only catches Exception, not Error, so a truly
                                 // unexpected failure (e.g. AssertionError, LinkageError) reaches here
                                 // uncaught -- and unlike every other per-region failure, was never
-                                // recorded in lastQueryErrors there. Record it here too, the same way,
-                                // so it isn't silently dropped from both the error report and the
-                                // total-failure check below (which would otherwise see it as neither a
-                                // recorded failure nor a genuine success).
+                                // recorded in lastQueryErrors there.
                                 Throwable actual = null != cause ? cause : e;
-                                String message = "Unexpected error retrieving a region query result: " + detailOf(actual);
+                                if (actual instanceof VirtualMachineError || actual instanceof ThreadDeath) {
+                                    // A fatal JVM/thread condition, not an ordinary region failure --
+                                    // swallowing it and continuing to assemble a partial node set could
+                                    // leave the process in an unsafe state. Let it propagate immediately
+                                    // instead of isolating it like every other per-region error.
+                                    throw (Error) actual;
+                                }
+                                // Record it the same way getInstancesByRegion() would have, endpoint
+                                // included, so it isn't silently dropped from both the error report and
+                                // the total-failure check below (which would otherwise see it as neither
+                                // a recorded failure nor a genuine success), and so an operator can tell
+                                // which region it came from.
+                                String message = "Unexpected error retrieving region '" + endpoint + "' query result: " + detailOf(actual);
                                 logger.error(message, e);
                                 lastQueryErrors.add(message);
                             }
