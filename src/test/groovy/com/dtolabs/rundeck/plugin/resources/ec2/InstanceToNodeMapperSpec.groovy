@@ -666,6 +666,77 @@ class InstanceToNodeMapperSpec extends Specification {
         ex.message.contains("boom")
     }
 
+    def "an Error (not just an Exception) from one region during sequential querying is still isolated and reported"() {
+        given: "us-west-1 fails with an Error that getInstancesByRegion()'s own catch(Exception) can't see, us-east-1 working -- same as the parallel-querying case, but sequential has no futures/ExecutionException layer of its own to isolate it"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new AssertionError("boom")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "without this, the Error would abort performQuery() entirely instead of just this one region"
+        def instances = mapper.performQuery(false)
+
+        then: "the working region's node is still returned; the Error doesn't abort the whole query"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the Error is still reported, not silently dropped, and names the region it came from"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("boom")
+        mapper.getQueryErrors()[0].contains("us-west-1")
+    }
+
+    def "every region failing with an Error under sequential querying throws rather than returning an empty result"() {
+        given: "both regions fail with an Error, which getInstancesByRegion()'s own catch(Exception) can't see"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint(_) >> {
+                throw new AssertionError("boom")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "without counting these as failed endpoints, this would look like an empty-but-successful query"
+        mapper.performQuery(false)
+
+        then: "the total failure propagates instead"
+        RuntimeException ex = thrown()
+        ex.message.contains("boom")
+    }
+
+    def "a fatal VM error from one region during sequential querying propagates instead of being isolated"() {
+        given: "us-west-1 fails with a VirtualMachineError, which must not be treated as an ordinary recoverable region failure"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new OutOfMemoryError("simulated OOM")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "swallowing this and continuing to assemble a partial node set could leave the process in an unsafe state"
+        mapper.performQuery(false)
+
+        then: "it propagates immediately rather than being recorded as a per-region failure"
+        thrown(OutOfMemoryError)
+    }
+
     def "an interrupted region query does not discard already-successful results from other regions during parallel querying"() {
         given: "one endpoint that hangs until released (to be interrupted), and a second that returns a node immediately"
         def startedLatch = new java.util.concurrent.CountDownLatch(1)

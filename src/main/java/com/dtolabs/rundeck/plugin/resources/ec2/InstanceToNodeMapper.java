@@ -176,14 +176,11 @@ class InstanceToNodeMapper {
                                     cancelPendingRegionQueries(futures);
                                     throw (Error) actual;
                                 }
-                                // Record it the same way getInstancesByRegion() would have, endpoint
-                                // included, so it isn't silently dropped from both the error report and
+                                // Isolated the same way getInstancesByRegion() isolates an ordinary
+                                // failure, so it isn't silently dropped from both the error report and
                                 // the total-failure check below (which would otherwise see it as neither
-                                // a recorded failure nor a genuine success), and so an operator can tell
-                                // which region it came from.
-                                String message = "Unexpected error retrieving region '" + endpoint + "' query result: " + detailOf(actual);
-                                logger.error(message, e);
-                                lastQueryErrors.add(message);
+                                // a recorded failure nor a genuine success).
+                                recordUnexpectedFailure(endpoint, actual);
                             }
                         }
                     }
@@ -222,7 +219,20 @@ class InstanceToNodeMapper {
                 }
             } else {
                 for (String endpoint : endpoints) {
-                    instances.addAll(getInstancesByRegion(endpoint));
+                    try {
+                        instances.addAll(getInstancesByRegion(endpoint));
+                    } catch (Error e) {
+                        // getInstancesByRegion() only catches Exception, not Error, so this branch
+                        // otherwise had no equivalent to the parallel branch's isolation of an
+                        // unexpected Error (e.g. AssertionError, LinkageError): every Error here would
+                        // abort the whole query instead of just this one region. Mirror the parallel
+                        // branch's handling for consistency, still letting a genuinely fatal
+                        // VirtualMachineError/ThreadDeath propagate immediately.
+                        if (e instanceof VirtualMachineError || e instanceof ThreadDeath) {
+                            throw e;
+                        }
+                        recordUnexpectedFailure(endpoint, e);
+                    }
                 }
             }
             // Every endpoint failed -- whether an ordinary per-region error (e.g. expired/invalid
@@ -345,6 +355,20 @@ class InstanceToNodeMapper {
                 future.cancel(true);
             }
         }
+    }
+
+    /**
+     * Isolates an unexpected (not getInstancesByRegion()'s own) failure the same way it isolates an
+     * ordinary one, endpoint included. Shared by both the sequential and parallel branches of
+     * {@link #performQuery(boolean)} so the message format doesn't drift between them. Callers are
+     * responsible for letting a fatal {@link VirtualMachineError}/{@link ThreadDeath} propagate
+     * instead of calling this -- continuing to assemble a partial result after one of those could
+     * leave the process in an unsafe state.
+     */
+    private void recordUnexpectedFailure(String endpoint, Throwable actual) {
+        String message = "Unexpected error retrieving region '" + endpoint + "' query result: " + detailOf(actual);
+        logger.error(message, actual);
+        lastQueryErrors.add(message);
     }
 
     /**
