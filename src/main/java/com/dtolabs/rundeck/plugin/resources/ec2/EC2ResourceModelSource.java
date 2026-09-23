@@ -398,7 +398,11 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                     INodeSet result = mapper.performQuery(queryNodeInstancesInParallel);
                     lastQueryError = joinQueryErrors(mapper.getQueryErrors());
                     return result;
-                } catch (Exception e) {
+                } catch (Throwable e) {
+                    // performQuery() deliberately lets a fatal VirtualMachineError/ThreadDeath from a
+                    // region worker propagate rather than isolating it (see InstanceToNodeMapper); catch
+                    // Throwable, not just Exception, here too so that policy isn't bypassed on this
+                    // background-refresh path -- otherwise checkFuture() below would just discard it.
                     String message = InstanceToNodeMapper.detailOf(e);
                     logger.warn("Error performing query: " + message, e);
                     // recorded at completion time, on the executor thread
@@ -449,7 +453,13 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                 logger.debug("Interrupted", e);
                 Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
-                // error and timestamp already recorded by the task itself
+                // error and timestamp already recorded by the task itself, except for a fatal cause:
+                // that's a deliberate exception to the isolation policy (see InstanceToNodeMapper), so
+                // it must propagate here too rather than being discarded like an ordinary query failure.
+                Throwable cause = e.getCause();
+                if (cause instanceof VirtualMachineError || cause instanceof ThreadDeath) {
+                    throw (Error) cause;
+                }
             } finally {
                 futureResult = null;
             }

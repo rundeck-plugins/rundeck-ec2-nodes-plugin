@@ -139,6 +139,36 @@ class EC2ResourceModelSourceSpec extends Specification {
         rms.getModelSourceErrors()[0].contains("All 2 EC2 region queries failed")
     }
 
+    def "a fatal VM error from a background refresh propagates out of checkFuture() instead of being discarded"() {
+        given: "async loading, and a mapper whose query fails with a VirtualMachineError rather than an ordinary exception"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw new OutOfMemoryError("simulated OOM") }
+        }
+        // simulate an already-completed prior refresh so the next getNodes() call takes the async
+        // (background executor) path rather than the synchronous first-fetch path
+        rms.lastRefresh = 1L
+
+        when: "the background query fails fatally and completes, then a later getNodes() call checks it"
+        try {
+            rms.getNodes()
+            rms.futureResult.get()
+        } catch (Throwable ignored) {
+            // expected: the task is expected to fail; get() here is only used to block until it's done
+        }
+        rms.getNodes()
+
+        then: "checkFuture() rethrows the fatal cause rather than silently discarding it and serving stale nodes as if nothing had happened"
+        thrown(OutOfMemoryError)
+
+        cleanup:
+        rms.close()
+    }
+
     def "constructor validates configuration before allocating resources or contacting Services"() {
         given: "an access key configured without its secret key or storage path"
         def config = createDefaultConfig()
