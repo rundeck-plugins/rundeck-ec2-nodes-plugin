@@ -1,12 +1,12 @@
 [versions]
 axionRelease = "1.21.3"
 awsSdk = "2.54.17"
-cglib = "3.3.0"
+byteBuddy = "1.18.14"
 commonsBeanutils = "1.11.0"
 groovy = "4.0.33"
 jacksonDatabind = "2.22.2"
 objenesis = "3.6"
-rundeckCore = "6.2.1-20260909"
+rundeckCore = "7.0.0-SNAPSHOT"
 slf4j = "2.0.19"
 spock = "2.4-groovy-4.0"
 # Security overrides for transitive dependencies
@@ -22,12 +22,12 @@ awsSdkApacheClient = { group = "software.amazon.awssdk", name = "apache-client" 
 jacksonDatabind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jacksonDatabind" }
 groovyAll = { group = "org.apache.groovy", name = "groovy-all", version.ref = "groovy" }
 spockCore = { group = "org.spockframework", name = "spock-core", version.ref = "spock" }
-cglibNodep = { group = "cglib", name = "cglib-nodep", version.ref = "cglib" }
+byteBuddy = { group = "net.bytebuddy", name = "byte-buddy", version.ref = "byteBuddy" }
 objenesis = { group = "org.objenesis", name = "objenesis", version.ref = "objenesis" }
 commonsLang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLang3" }
 
 [bundles]
-testLibs = ["groovyAll", "spockCore", "cglibNodep", "objenesis"]
+testLibs = ["groovyAll", "spockCore", "byteBuddy", "objenesis"]
 
 [plugins]
 axionRelease = { id = "pl.allegro.tech.build.axion-release", version.ref = "axionRelease" }
