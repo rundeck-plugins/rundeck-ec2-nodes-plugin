@@ -3,6 +3,7 @@ package com.dtolabs.rundeck.plugin.resources.ec2
 import software.amazon.awssdk.auth.credentials.AwsCredentials
 import com.dtolabs.rundeck.core.common.Framework
 import com.dtolabs.rundeck.core.common.IRundeckProject
+import com.dtolabs.rundeck.core.common.NodeSetImpl
 import com.dtolabs.rundeck.core.common.ProjectManager
 import com.dtolabs.rundeck.core.plugins.configuration.ConfigurationException
 import com.dtolabs.rundeck.core.storage.keys.KeyStorageTree
@@ -46,9 +47,126 @@ class EC2ResourceModelSourceSpec extends Specification {
         errors[0].contains("RuntimeException")
 
         where:
-        description | cause
-        "no"        | new RuntimeException()
-        "blank"     | new RuntimeException("")
+        description        | cause
+        "no"                | new RuntimeException()
+        "blank"             | new RuntimeException("")
+        "whitespace-only"   | new RuntimeException("   ")
+    }
+
+    def "getModelSourceErrors reports partial per-region failures after a successful synchronous query"() {
+        given: "synchronous loading, and a mapper whose query succeeds but recorded a per-region failure"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "true")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> new NodeSetImpl()
+            getQueryErrors() >> ["Error querying EC2 region endpoint 'https://ec2.us-west-1.amazonaws.com': access denied"]
+        }
+
+        when: "getNodes() performs the (always-synchronous, first-fetch) query"
+        try {
+            rms.getNodes()
+        } finally {
+            rms.close()
+        }
+
+        then: "the per-region failure is reported even though the overall query succeeded"
+        def errors = rms.getModelSourceErrors()
+        errors.size() == 1
+        errors[0].contains("us-west-1")
+    }
+
+    def "getModelSourceErrors reports partial per-region failures after a successful background refresh"() {
+        given: "async loading, and a mapper whose query succeeds but recorded a per-region failure"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> new NodeSetImpl()
+            getQueryErrors() >> ["Error querying EC2 region endpoint 'https://ec2.us-west-1.amazonaws.com': access denied"]
+        }
+        // simulate an already-completed prior refresh so the next getNodes() call takes the async
+        // (background executor) path rather than the synchronous first-fetch path
+        rms.lastRefresh = 1L
+
+        when: "getNodes() submits the background query and it finishes"
+        try {
+            rms.getNodes()
+            rms.futureResult.get()
+        } finally {
+            rms.close()
+        }
+
+        then: "the per-region failure is reported even though the overall query succeeded"
+        def errors = rms.getModelSourceErrors()
+        errors.size() == 1
+        errors[0].contains("us-west-1")
+    }
+
+    def "a total per-region failure during a synchronous refresh preserves the previously cached nodes instead of wiping them to empty"() {
+        given: "synchronous loading, with nodes already cached from a prior successful refresh"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "true")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        def staleNodes = new NodeSetImpl()
+        rms.iNodeSet = staleNodes
+        // simulate a prior refresh long enough ago that the next getNodes() call needs a new one
+        rms.lastRefresh = 1L
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw new RuntimeException("All 2 EC2 region queries failed: access denied") }
+        }
+
+        when: "a refresh runs and every region fails (e.g. expired credentials), unlike an ordinary partial failure"
+        try {
+            rms.getNodes()
+        } catch (RuntimeException ignored) {
+            // expected: the total-outage failure propagates, matching pre-isolation behavior
+        } finally {
+            rms.close()
+        }
+
+        then: "the stale node set from the prior refresh is still in place, not wiped to empty"
+        rms.iNodeSet.is(staleNodes)
+
+        and: "the failure is still visible via getModelSourceErrors()"
+        rms.getModelSourceErrors().size() == 1
+        rms.getModelSourceErrors()[0].contains("All 2 EC2 region queries failed")
+    }
+
+    def "a fatal VM error from a background refresh propagates out of checkFuture() instead of being discarded"() {
+        given: "async loading, and a mapper whose query fails with a VirtualMachineError rather than an ordinary exception"
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "false")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw new OutOfMemoryError("simulated OOM") }
+        }
+        // simulate an already-completed prior refresh so the next getNodes() call takes the async
+        // (background executor) path rather than the synchronous first-fetch path
+        rms.lastRefresh = 1L
+
+        when: "the background query fails fatally and completes, then a later getNodes() call checks it"
+        try {
+            rms.getNodes()
+            rms.futureResult.get()
+        } catch (Throwable ignored) {
+            // expected: the task is expected to fail; get() here is only used to block until it's done
+        }
+        rms.getNodes()
+
+        then: "checkFuture() rethrows the fatal cause rather than silently discarding it and serving stale nodes as if nothing had happened"
+        thrown(OutOfMemoryError)
+
+        cleanup:
+        rms.close()
     }
 
     def "constructor validates configuration before allocating resources or contacting Services"() {

@@ -24,6 +24,19 @@ import spock.lang.Unroll
  * @since 12/16/16
  */
 class InstanceToNodeMapperSpec extends Specification {
+    @Unroll
+    def "detailOf falls back to toString() for a #description message"() {
+        expect:
+        InstanceToNodeMapper.detailOf(cause) == expected
+
+        where:
+        description       | cause                              | expected
+        "normal"          | new RuntimeException("boom")       | "boom"
+        "missing"         | new RuntimeException()             | new RuntimeException().toString()
+        "blank"           | new RuntimeException("")           | new RuntimeException("").toString()
+        "whitespace-only" | new RuntimeException("   ")        | new RuntimeException("   ").toString()
+    }
+
     def "single selector valid properties"() {
         given:
         def i = Ec2Instance.builder(mkInstance())
@@ -347,6 +360,393 @@ class InstanceToNodeMapperSpec extends Specification {
         instances.getNode("aninstanceId-us-east-1") != null
     }
 
+    @Unroll
+    def "one region denied still returns the other region's nodes (parallel: #parallel)"() {
+        given: "us-west-1 denied (e.g. an IAM policy restricting ec2:* to us-east-1), us-east-1 working"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        def instances = mapper.performQuery(parallel)
+
+        then: "the working region's node is still returned, not discarded"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the denied region's failure is reported rather than lost silently"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("us-west-1")
+
+        where:
+        parallel << [true, false]
+    }
+
+    @Unroll
+    def "every region denied throws rather than returning an empty result (parallel: #parallel)"() {
+        given: "both us-west-1 and us-east-1 denied"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-west-1")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                throw new RuntimeException("UnauthorizedOperation: not authorized for us-east-1")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "a total outage happens, unlike an ordinary partial failure there is nothing to preserve"
+        mapper.performQuery(parallel)
+
+        then: "the failure propagates instead of yielding an empty-but-successful result"
+        RuntimeException ex = thrown()
+        ex.message.contains("us-west-1")
+        ex.message.contains("us-east-1")
+
+        where:
+        parallel << [true, false]
+    }
+
+    def "isolation still applies when a region's failure is not a recognized AWS SDK exception"() {
+        given: "us-west-1 fails with a plugin-side bug (e.g. an NPE), us-east-1 working"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new NullPointerException()
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when:
+        def instances = mapper.performQuery(false)
+
+        then: "the working region's node is still returned; a non-AWS failure doesn't abort the batch"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the failure is still reported"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("us-west-1")
+    }
+
+    @Unroll
+    def "an Error (not just an Exception) from one region is still isolated and reported (parallel: #parallel)"() {
+        given: "us-west-1 fails with an Error that getInstancesByRegion()'s own catch(Exception) can't see, us-east-1 working"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new AssertionError("boom")
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "without isolating it, the Error would abort the whole query instead of just this one region"
+        def instances = mapper.performQuery(parallel)
+
+        then: "the working region's node is still returned; the Error doesn't abort the batch"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        and: "the Error is still reported, not silently dropped, and names the region it came from"
+        mapper.getQueryErrors().size() == 1
+        mapper.getQueryErrors()[0].contains("boom")
+        mapper.getQueryErrors()[0].contains("us-west-1")
+
+        where:
+        parallel << [true, false]
+    }
+
+    def "a fatal VM error from one region during parallel querying cancels the other region work and propagates promptly"() {
+        given: "one region is blocked in an AWS call while another hits a fatal JVM error"
+        def startedLatch = new java.util.concurrent.CountDownLatch(1)
+        // A Semaphore, not a CountDownLatch like releaseLatch below: workersBlockedOnReleaseLatch()
+        // matches any thread blocked in CountDownLatch.await(), so if this were a CountDownLatch too,
+        // us-east-1 waiting here at the same time us-west-1 is blocked on releaseLatch would make that
+        // helper see 2 blocked workers instead of 1, racing the "size() == 1" check below.
+        def allowFatalLatch = new java.util.concurrent.Semaphore(0)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                allowFatalLatch.tryAcquire(5, java.util.concurrent.TimeUnit.SECONDS)
+                throw new OutOfMemoryError("simulated OOM")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+        Throwable caught = null
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
+        Thread queryThread = new Thread({ ->
+            try {
+                mapper.performQuery(true)
+            } catch (Throwable t) {
+                caught = t
+            }
+        })
+
+        when: "the blocked region is in flight before the fatal error is released"
+        queryThread.start()
+        boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).size() == 1
+        }
+        allowFatalLatch.release()
+        queryThread.join(5000)
+
+        then: "the fatal error still propagates"
+        reachedBlockedRegionCall
+        !queryThread.isAlive()
+        caught instanceof OutOfMemoryError
+
+        and: "the other region task was cancelled rather than left blocked until manual release"
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).isEmpty()
+        }
+
+        cleanup:
+        releaseLatch.countDown()
+    }
+
+    def "a fatal VM error propagates promptly even when a sibling region worker ignores its cancellation"() {
+        given: "us-west-1 ignores interruption and blocks indefinitely, unlike the latch-based mocks elsewhere in this file that respond to cancel(true)"
+        def blockLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        // Cancellation via future.cancel(true) is only best-effort: a worker blocked
+                        // in an uninterruptible call (e.g. raw socket I/O) can simply ignore the
+                        // interrupt and keep running, which this simulates by swallowing it and
+                        // retrying rather than letting it propagate.
+                        while (true) {
+                            try {
+                                blockLatch.await()
+                                break
+                            } catch (InterruptedException ignored) {
+                            }
+                        }
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                throw new OutOfMemoryError("simulated OOM")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "us-west-1's worker never actually terminates for the rest of this test"
+        long start = System.currentTimeMillis()
+        long elapsedMs = -1L
+        try {
+            mapper.performQuery(true)
+        } finally {
+            elapsedMs = System.currentTimeMillis() - start
+        }
+
+        then: "the fatal error still propagates, and promptly -- not after waiting anywhere near the 90-second termination timeout for the unresponsive worker"
+        thrown(OutOfMemoryError)
+        elapsedMs < 5000
+
+        cleanup:
+        blockLatch.countDown()
+    }
+
+    @Unroll
+    def "every region failing with an Error throws rather than returning an empty result (parallel: #parallel)"() {
+        given: "both regions fail with an Error, which getInstancesByRegion()'s own catch(Exception) can't see"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint(_) >> {
+                throw new AssertionError("boom")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "without counting these as failed endpoints, this would look like an empty-but-successful query"
+        mapper.performQuery(parallel)
+
+        then: "the total failure propagates instead"
+        RuntimeException ex = thrown()
+        ex.message.contains("boom")
+
+        where:
+        parallel << [true, false]
+    }
+
+    def "a fatal VM error from one region during sequential querying propagates instead of being isolated"() {
+        given: "us-west-1 fails with a VirtualMachineError, which must not be treated as an ordinary recoverable region failure"
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                throw new OutOfMemoryError("simulated OOM")
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+
+        when: "swallowing this and continuing to assemble a partial node set could leave the process in an unsafe state"
+        mapper.performQuery(false)
+
+        then: "it propagates immediately rather than being recorded as a per-region failure"
+        thrown(OutOfMemoryError)
+    }
+
+    def "an interrupted region query does not discard already-successful results from other regions during parallel querying"() {
+        given: "one endpoint that hangs until released (to be interrupted), and a second that returns a node immediately"
+        def startedLatch = new java.util.concurrent.CountDownLatch(1)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+            getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
+                def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
+                Mock(Ec2Client) {
+                    describeInstances(_) >> DescribeInstancesResponse.builder()
+                            .reservations(Reservation.builder().instances(instance).build())
+                            .build()
+                    describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
+        def instances = null
+        Thread queryThread = new Thread({ -> instances = mapper.performQuery(true) })
+
+        when: "the query starts, and once us-west-1's call is blocked, only its own worker thread is interrupted"
+        queryThread.start()
+        boolean reachedBlockedRegionCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).size() == 1
+        }
+        Thread blockedWorker = workersBlockedOnReleaseLatch(threadsBefore)[0]
+        blockedWorker.interrupt()
+        queryThread.join(5000)
+
+        then: "the blocked region's own worker thread was found and interrupted, not the calling thread"
+        reachedBlockedRegionCall
+        blockedWorker != null
+        !queryThread.isAlive()
+
+        and: "us-east-1's already-successful result is not discarded just because us-west-1's worker was interrupted"
+        instances != null
+        instances.getNode("aninstanceId-us-east-1") != null
+        instances.getNodeNames().size() == 1
+
+        cleanup: "release the mock call in case the interrupt was somehow missed"
+        releaseLatch.countDown()
+    }
+
+    def "every region interrupted under parallel querying throws rather than returning an empty result"() {
+        given: "both endpoints hang until released, so both can be interrupted before either succeeds"
+        def startedLatch = new java.util.concurrent.CountDownLatch(2)
+        def releaseLatch = new java.util.concurrent.CountDownLatch(1)
+        def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint(_) >> {
+                Mock(Ec2Client) {
+                    describeAvailabilityZones() >> {
+                        startedLatch.countDown()
+                        releaseLatch.await()
+                        DescribeAvailabilityZonesResponse.builder().build()
+                    }
+                }
+            }
+        }
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint(endpoints.join(', '))
+        Set<Thread> threadsBefore = Thread.getAllStackTraces().keySet()
+        Throwable caught = null
+        Thread queryThread = new Thread({ ->
+            try {
+                mapper.performQuery(true)
+            } catch (Throwable t) {
+                caught = t
+            }
+        })
+
+        when: "the query starts, and once both regions' calls are blocked, both worker threads are interrupted"
+        queryThread.start()
+        boolean bothReachedBlockedCall = startedLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        new PollingConditions(timeout: 5).eventually {
+            assert workersBlockedOnReleaseLatch(threadsBefore).size() == 2
+        }
+        workersBlockedOnReleaseLatch(threadsBefore).each { it.interrupt() }
+        queryThread.join(5000)
+
+        then: "both regions were actually reached and interrupted before either could succeed"
+        bothReachedBlockedCall
+        !queryThread.isAlive()
+
+        and: "the total failure propagates instead of yielding an empty-but-successful result, even though no per-region error was ever recorded"
+        caught != null
+
+        cleanup: "release the mock call in case an interrupt was somehow missed"
+        releaseLatch.countDown()
+    }
+
     def "parallel query still terminates promptly, without leaking its inner thread pool, when interrupted mid-flight"() {
         given: "one endpoint that hangs until released, and a second that returns immediately"
         def startedLatch = new java.util.concurrent.CountDownLatch(1)
@@ -402,6 +802,19 @@ class InstanceToNodeMapperSpec extends Specification {
     private static List<String> leakedPoolThreads(Set<Thread> before) {
         Thread.getAllStackTraces().keySet()
                 .findAll { !(it in before) && it.alive && it.name.startsWith("pool-") }*.name
+    }
+
+    /**
+     * The new pool worker threads, if any, that are actually blocked inside {@code
+     * releaseLatch.await()} -- not just any new pool thread in {@code WAITING} state, since an idle
+     * worker parked on the pool's internal work queue is in that same state and would otherwise be
+     * matched instead.
+     */
+    private static List<Thread> workersBlockedOnReleaseLatch(Set<Thread> before) {
+        Thread.getAllStackTraces().findAll { thread, trace ->
+            !(thread in before) && thread.name.startsWith("pool-") &&
+                    trace.any { it.className == 'java.util.concurrent.CountDownLatch' && it.methodName == 'await' }
+        }.keySet() as List<Thread>
     }
     def "region added to the node attributes with ALL_REGIONS specified"() {
         given:

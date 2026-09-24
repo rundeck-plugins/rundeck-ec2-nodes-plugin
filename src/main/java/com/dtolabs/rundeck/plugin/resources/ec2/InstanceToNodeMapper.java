@@ -28,6 +28,7 @@ import com.dtolabs.rundeck.core.common.NodeEntryImpl;
 import com.dtolabs.rundeck.core.common.NodeSetImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.AvailabilityZone;
 import software.amazon.awssdk.services.ec2.model.DescribeAvailabilityZonesResponse;
@@ -66,6 +67,19 @@ class InstanceToNodeMapper {
     private final int maxResults;
     private final EC2Supplier ec2Supplier;
 
+    /**
+     * Errors from individual region queries during the most recent {@link #performQuery(boolean)}
+     * call, e.g. an access-denied region under an ALL_REGIONS/multi-endpoint configuration. A failure
+     * here does not abort the overall query: nodes from other regions are still returned, and these
+     * messages let the caller surface the failure instead of losing it silently.
+     * <p>
+     * Cleared and appended to once per endpoint (potentially concurrently, from the parallel query
+     * path) and read once at the end -- write-heavy, not read-heavy -- so a {@link ConcurrentLinkedQueue}
+     * is used rather than {@link java.util.concurrent.CopyOnWriteArrayList}, which would copy its
+     * entire backing array on every add/clear.
+     */
+    private final Queue<String> lastQueryErrors = new ConcurrentLinkedQueue<>();
+
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
     /**
@@ -83,6 +97,7 @@ class InstanceToNodeMapper {
      *
      */
     public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
+        lastQueryErrors.clear();
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
         Set<Ec2Instance> instances = new HashSet<>();
@@ -97,47 +112,137 @@ class InstanceToNodeMapper {
             if (queryNodeInstancesInParallel && !endpoints.isEmpty()) {
                 logger.info("Creating thread pool for {} regions", endpoints.size());
                 ExecutorService executor = Executors.newFixedThreadPool(endpoints.size());
+                // The one collection of submitted futures: also doubles as the set to cancel on a
+                // fatal error or interrupt, since ExecutorCompletionService.take() returns futures in
+                // completion order, not submission order, so a future needs to be mapped back to its
+                // endpoint.
+                Map<Future<Set<Ec2Instance>>, String> futureEndpoints = new HashMap<>();
+                // Set right before cancelling and immediately propagating a fatal error or an
+                // interrupt of the calling thread -- both cases already cancel the pending region
+                // tasks below, so the finally block shouldn't also block this thread for up to 90
+                // seconds waiting for possibly-unresponsive workers to actually exit.
+                boolean promptShutdown = false;
                 try {
-                    Set<Callable<Set<Ec2Instance>>> tasks = new HashSet<>();
+                    CompletionService<Set<Ec2Instance>> completionService = new ExecutorCompletionService<>(executor);
                     for (String endpoint : endpoints) {
-                        tasks.add(new Callable<Set<Ec2Instance>>() {
+                        Future<Set<Ec2Instance>> future = completionService.submit(new Callable<Set<Ec2Instance>>() {
                             @Override
                             public Set<Ec2Instance> call() throws Exception {
                                 return getInstancesByRegion(endpoint);
                             }
                         });
+                        futureEndpoints.put(future, endpoint);
                     }
                     logger.info("Querying {} regions in parallel", endpoints.size());
-                    List<Future<Set<Ec2Instance>>> futures = executor.invokeAll(tasks);
-                    for (Future<Set<Ec2Instance>> future : futures) {
+                    // Restoring the interrupt flag as soon as one interrupted future is seen (rather
+                    // than after the whole loop) would make a *later* future.get() in this same loop
+                    // throw InterruptedException immediately, dropping whichever already-completed
+                    // regions' results hadn't been read yet. So only record it here, and restore the
+                    // flag once every future has been collected.
+                    boolean anyInterrupted = false;
+                    for (int i = 0; i < endpoints.size(); i++) {
+                        Future<Set<Ec2Instance>> future = completionService.take();
+                        String endpoint = futureEndpoints.get(future);
                         try {
                             instances.addAll(future.get());
                         } catch (ExecutionException e) {
-                            throw new RuntimeException(e);
+                            // getInstancesByRegion() only lets an exception reach this future when its
+                            // own region query was interrupted -- every other per-region failure is
+                            // already caught and recorded there instead of thrown. Because completions
+                            // are consumed one-by-one as they finish, keep collecting after an
+                            // interrupted region so already-finished or later-successful regions still
+                            // contribute nodes instead of being discarded.
+                            Throwable cause = e.getCause();
+                            if (cause instanceof RuntimeException && cause.getCause() instanceof InterruptedException) {
+                                // Recorded in lastQueryErrors, like every other per-region failure, so
+                                // the total-failure check below can tell an all-interrupted parallel
+                                // query apart from a genuine, if empty, successful result.
+                                anyInterrupted = true;
+                                lastQueryErrors.add("Query for region '" + endpoint + "' was interrupted");
+                            } else {
+                                // getInstancesByRegion() only catches Exception, not Error, so a truly
+                                // unexpected failure (e.g. AssertionError, LinkageError) reaches here
+                                // uncaught -- and unlike every other per-region failure, was never
+                                // recorded in lastQueryErrors there.
+                                Throwable actual = null != cause ? cause : e;
+                                if (actual instanceof VirtualMachineError || actual instanceof ThreadDeath) {
+                                    // A fatal JVM/thread condition, not an ordinary region failure --
+                                    // swallowing it and continuing to assemble a partial node set could
+                                    // leave the process in an unsafe state. Cancel the other region
+                                    // tasks first, then let it propagate immediately instead of
+                                    // isolating it like every other per-region error.
+                                    promptShutdown = true;
+                                    cancelPendingRegionQueries(futureEndpoints.keySet());
+                                    throw (Error) actual;
+                                }
+                                // Isolated the same way getInstancesByRegion() isolates an ordinary
+                                // failure, so it isn't silently dropped from both the error report and
+                                // the total-failure check below (which would otherwise see it as neither
+                                // a recorded failure nor a genuine success).
+                                recordUnexpectedFailure(endpoint, actual);
+                            }
                         }
+                    }
+                    if (anyInterrupted) {
+                        Thread.currentThread().interrupt();
                     }
                     logger.info("Finished querying {} regions in parallel", endpoints.size());
                 } catch (InterruptedException e) {
+                    promptShutdown = true;
+                    cancelPendingRegionQueries(futureEndpoints.keySet());
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 } finally {
                     // always release the per-region pool, whatever happened above
                     executor.shutdown();
-                    try {
-                        logger.debug("Waiting up to {} seconds for the region query thread pool to terminate", 90);
-                        if (!executor.awaitTermination(90, TimeUnit.SECONDS)) {
-                            logger.warn("Region query thread pool did not terminate promptly; forcing shutdown");
-                        }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    } finally {
+                    if (promptShutdown) {
+                        // A fatal error or interrupt is already propagating immediately, and the
+                        // pending region tasks were already cancelled above -- cancellation is only
+                        // best-effort (a worker can ignore interruption or stay blocked in an AWS
+                        // call), so waiting here for up to 90 seconds for them to actually exit would
+                        // defeat "immediately" and stall this thread right along with the fatal
+                        // condition it's trying to propagate.
                         executor.shutdownNow();
+                    } else {
+                        try {
+                            logger.debug("Waiting up to {} seconds for the region query thread pool to terminate", 90);
+                            if (!executor.awaitTermination(90, TimeUnit.SECONDS)) {
+                                logger.warn("Region query thread pool did not terminate promptly; forcing shutdown");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            executor.shutdownNow();
+                        }
                     }
                 }
             } else {
                 for (String endpoint : endpoints) {
-                    instances.addAll(getInstancesByRegion(endpoint));
+                    try {
+                        instances.addAll(getInstancesByRegion(endpoint));
+                    } catch (Error e) {
+                        // getInstancesByRegion() only catches Exception, not Error, so this branch
+                        // otherwise had no equivalent to the parallel branch's isolation of an
+                        // unexpected Error (e.g. AssertionError, LinkageError): every Error here would
+                        // abort the whole query instead of just this one region. Mirror the parallel
+                        // branch's handling for consistency, still letting a genuinely fatal
+                        // VirtualMachineError/ThreadDeath propagate immediately.
+                        if (e instanceof VirtualMachineError || e instanceof ThreadDeath) {
+                            throw e;
+                        }
+                        recordUnexpectedFailure(endpoint, e);
+                    }
                 }
+            }
+            // Every endpoint failed -- not just one region denied: unlike an ordinary partial failure,
+            // there are no other regions' nodes to preserve here, so throw instead of returning an
+            // empty NodeSetImpl. This matches the pre-isolation behavior of propagating the failure,
+            // so callers like EC2ResourceModelSource#getNodes() leave any previously-cached,
+            // stale-but-valid node set in place rather than wiping it to empty on a total outage.
+            if (!endpoints.isEmpty() && lastQueryErrors.size() == endpoints.size()) {
+                throw new RuntimeException(
+                        "All " + endpoints.size() + " EC2 region queries failed: "
+                                + String.join("; ", lastQueryErrors));
             }
         }
         else if(region != null){
@@ -204,9 +309,80 @@ class InstanceToNodeMapper {
             if (newInstances != null && !newInstances.isEmpty()) {
                 allInstances.addAll(newInstances);
             }
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                // An interrupted region query is a cancellation signal, not just another region
+                // failing: restore the interrupt status and propagate rather than swallowing it
+                // as an ordinary per-region error, so shutdown/cancellation semantics still hold.
+                // (None of the AWS SDK calls above declare a checked InterruptedException, so this
+                // is a runtime instanceof check rather than a dedicated catch clause.)
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+            // A single region failing (e.g. a policy that denies ec2:* outside one region under
+            // ALL_REGIONS) must not discard nodes already fetched from other, working regions.
+            // Both the sequential loop and the parallel-query Callables in performQuery() route
+            // through this method, so isolating the failure here covers both call paths.
+            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detailOf(e);
+            if (e instanceof SdkException) {
+                // WARN without the stack trace: under ALL_REGIONS with a region-restricted IAM
+                // policy, every disallowed region logs here on every refresh, and a full trace per
+                // region per cycle is noisy. The trace is still available at DEBUG for diagnostics.
+                logger.warn(message);
+                logger.debug(message, e);
+            } else {
+                // Not a recognized AWS SDK failure (access denied, throttling, network, etc) --
+                // more likely a plugin defect (e.g. an NPE from an unexpected response shape) than a
+                // routine per-region error. Still isolated so other regions aren't affected, but
+                // logged at ERROR with a full stack trace so a real bug isn't mistaken for, and
+                // buried among, routine AWS unavailability.
+                logger.error(message, e);
+            }
+            lastQueryErrors.add(message);
         }
 
         return allInstances;
+    }
+
+    private static void cancelPendingRegionQueries(final Collection<Future<Set<Ec2Instance>>> futures) {
+        for (Future<Set<Ec2Instance>> future : futures) {
+            if (!future.isDone()) {
+                future.cancel(true);
+            }
+        }
+    }
+
+    /**
+     * Isolates an unexpected (not getInstancesByRegion()'s own) failure the same way it isolates an
+     * ordinary one, endpoint included. Shared by both the sequential and parallel branches of
+     * {@link #performQuery(boolean)} so the message format doesn't drift between them. Callers are
+     * responsible for letting a fatal {@link VirtualMachineError}/{@link ThreadDeath} propagate
+     * instead of calling this -- continuing to assemble a partial result after one of those could
+     * leave the process in an unsafe state.
+     */
+    private void recordUnexpectedFailure(String endpoint, Throwable actual) {
+        String message = "Unexpected error retrieving region '" + endpoint + "' query result: " + detailOf(actual);
+        logger.error(message, actual);
+        lastQueryErrors.add(message);
+    }
+
+    /**
+     * Errors from individual region queries during the most recent {@link #performQuery(boolean)}
+     * call, if any. Empty if every region queried successfully.
+     */
+    public List<String> getQueryErrors() {
+        return new ArrayList<>(lastQueryErrors);
+    }
+
+    /**
+     * A throwable's message, falling back to {@link Throwable#toString()} when the message is
+     * null or blank (e.g. a {@link NullPointerException} with no message, or one that's
+     * whitespace-only). Shared with {@link EC2ResourceModelSource}'s own error-reporting catch
+     * blocks so the fallback doesn't drift between the two.
+     */
+    static String detailOf(Throwable e) {
+        String detail = e.getMessage();
+        return (null != detail && !detail.isBlank()) ? detail : e.toString();
     }
 
     private Set<Ec2Instance> query(final Ec2Client ec2, final DescribeInstancesRequest request) {

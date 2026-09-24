@@ -291,7 +291,13 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     /**
      * Build a shared HTTP client, applying HTTP proxy configuration when supplied. The same client
      * is reused for the EC2 clients and the STS client so proxy settings apply consistently.
+     * <p>
+     * Deliberately still on the deprecated Apache HTTP client (4.x), not {@code apache5-client}: see
+     * the {@code pluginLibs} comment in {@code build.gradle} -- 4.x is the one actually bundled into
+     * the plugin jar (apache5-client is excluded to keep it small), so switching this import without
+     * also flipping that dependency would reference a client not present at runtime.
      */
+    @SuppressWarnings("deprecation")
     private SdkHttpClient buildHttpClient() {
         ApacheHttpClient.Builder builder = ApacheHttpClient.builder();
         if (null != httpProxyHost && !"".equals(httpProxyHost)) {
@@ -390,13 +396,17 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             futureResult = executor.submit(() -> {
                 try {
                     INodeSet result = mapper.performQuery(queryNodeInstancesInParallel);
-                    lastQueryError = null;
+                    lastQueryError = joinQueryErrors(mapper.getQueryErrors());
                     return result;
-                } catch (Exception e) {
-                    String message = e.getMessage();
+                } catch (Throwable e) {
+                    // performQuery() deliberately lets a fatal VirtualMachineError/ThreadDeath from a
+                    // region worker propagate rather than isolating it (see InstanceToNodeMapper); catch
+                    // Throwable, not just Exception, here too so that policy isn't bypassed on this
+                    // background-refresh path -- otherwise checkFuture() below would just discard it.
+                    String message = InstanceToNodeMapper.detailOf(e);
                     logger.warn("Error performing query: " + message, e);
                     // recorded at completion time, on the executor thread
-                    lastQueryError = (null != message && !message.isEmpty()) ? message : e.toString();
+                    lastQueryError = message;
                     throw e;
                 } finally {
                     // stamped at completion time, on the executor thread
@@ -408,6 +418,14 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             //always perform synchronous query the first time
             try {
                 iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
+                lastQueryError = joinQueryErrors(mapper.getQueryErrors());
+            } catch (RuntimeException e) {
+                // e.g. every region failed under ALL_REGIONS/multi-endpoint: iNodeSet is left as-is
+                // (any previously-cached, stale-but-valid nodes are preserved) since the assignment
+                // above never completes, but the failure should still be visible via
+                // getModelSourceErrors() rather than only surfacing as this rethrown exception.
+                lastQueryError = InstanceToNodeMapper.detailOf(e);
+                throw e;
             } finally {
                 // stamped even on failure, so a broken config doesn't retry with no cooldown
                 lastRefresh = System.currentTimeMillis();
@@ -435,7 +453,13 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                 logger.debug("Interrupted", e);
                 Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
-                // error and timestamp already recorded by the task itself
+                // error and timestamp already recorded by the task itself, except for a fatal cause:
+                // that's a deliberate exception to the isolation policy (see InstanceToNodeMapper), so
+                // it must propagate here too rather than being discarded like an ordinary query failure.
+                Throwable cause = e.getCause();
+                if (cause instanceof VirtualMachineError || cause instanceof ThreadDeath) {
+                    throw (Error) cause;
+                }
             } finally {
                 futureResult = null;
             }
@@ -451,6 +475,16 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
     public List<String> getModelSourceErrors() {
         String error = lastQueryError;
         return null != error ? Collections.singletonList(error) : Collections.emptyList();
+    }
+
+    /**
+     * Joins per-region query errors (e.g. one denied region under an ALL_REGIONS/multi-endpoint
+     * configuration) into a single message for {@link #lastQueryError}, or null if there were none.
+     * Nodes from other, successfully-queried regions are still returned by {@link #getNodes()}; this
+     * just makes sure the partial failure isn't lost silently.
+     */
+    private static String joinQueryErrors(List<String> errors) {
+        return (null == errors || errors.isEmpty()) ? null : String.join("; ", errors);
     }
 
     /**
