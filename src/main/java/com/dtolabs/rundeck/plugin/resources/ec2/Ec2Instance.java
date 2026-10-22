@@ -22,6 +22,9 @@ public class Ec2Instance {
 
     /**
      * Create a wrapper around the given EC2 instance, or null if the instance is null.
+     *
+     * @param instance the AWS SDK v2 instance to wrap, may be null
+     * @return the wrapper, or null if {@code instance} is null
      */
     public static Ec2Instance builder(Instance instance) {
         if (null == instance) {
@@ -32,35 +35,62 @@ public class Ec2Instance {
 
     /**
      * The wrapped AWS SDK v2 instance.
+     *
+     * @return the wrapped instance
      */
     public Instance instance() {
         return instance;
     }
 
+    /**
+     * @return the EC2 instance ID, or null if there is no wrapped instance
+     */
     public String instanceId() {
         return null == instance ? null : instance.instanceId();
     }
 
+    /**
+     * @return the name of the instance's AMI, if it has been looked up
+     */
     public String getImageName() {
         return imageName;
     }
 
+    /**
+     * Same as {@link #getImageName()}, in the AWS SDK v2 accessor style.
+     *
+     * @return the name of the instance's AMI, if it has been looked up
+     */
     public String imageName() {
         return imageName;
     }
 
+    /**
+     * @param imageName the name of the instance's AMI
+     */
     public void setImageName(String imageName) {
         this.imageName = imageName;
     }
 
+    /**
+     * @return the region the instance was queried from
+     */
     public String getRegion() {
         return region;
     }
 
+    /**
+     * Same as {@link #getRegion()}, in the AWS SDK v2 accessor style.
+     *
+     * @return the region the instance was queried from
+     */
     public String region() {
         return region;
     }
 
+    /**
+     * @param region the region the instance was queried from
+     */
     public void setRegion(String region) {
         this.region = region;
     }

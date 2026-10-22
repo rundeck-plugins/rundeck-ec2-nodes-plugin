@@ -174,6 +174,12 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         }
     }
 
+    /**
+     * Create a node source from the plugin configuration.
+     *
+     * @param configuration plugin configuration, keyed by the {@link EC2ResourceModelSourceFactory} property names
+     * @param services Rundeck services, used to read secrets from key storage
+     */
     public EC2ResourceModelSource(final Properties configuration, final Services services) {
         this.services = services;
         this.accessKey = configuration.getProperty(EC2ResourceModelSourceFactory.ACCESS_KEY);
@@ -314,6 +320,12 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
         return builder.build();
     }
 
+    /**
+     * Build the AWS credentials from the configuration: an access key with a secret key (inline or
+     * from key storage), otherwise an assumed role if one is configured.
+     *
+     * @return the credentials, or null to use the AWS SDK default credentials chain
+     */
     protected AwsCredentials createCredentials() {
         if (null != accessKey && null != secretKeyStoragePath) {
             KeyStorageTree keyStorage = services.getService(KeyStorageTree.class);
@@ -530,6 +542,8 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
      * {@link Properties} before construction (see its {@code validateConfiguration}) so it never
      * needs to call this, but other callers that construct this class directly -- e.g. rundeckpro's
      * own factory -- must call this themselves after construction to get the same check.
+     *
+     * @throws ConfigurationException if an access key is set without a secret key or secret key storage path
      */
     public void validate() throws ConfigurationException {
         if (null != accessKey && null == secretKey && null == secretKeyStoragePath) {
