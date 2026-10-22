@@ -53,35 +53,66 @@ import java.util.*;
  */
 @Plugin(name = "aws-ec2", service = "ResourceModelSource")
 public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory, Describable {
+    /** Plugin provider name. */
     public static final String PROVIDER_NAME = "aws-ec2";
     private Framework framework;
 
+    /** Config property: AWS EC2 endpoint(s) to query, comma-separated, or {@code ALL_REGIONS}. */
     public static final String ENDPOINT = "endpoint";
+    /** Config property: EC2 instance filters. */
     public static final String FILTER_PARAMS = "filter";
+    /** Config property: inline node attribute mapping definitions. */
     public static final String MAPPING_PARAMS = "mappingParams";
+    /** Config property: include only instances in the running state. */
     public static final String RUNNING_ONLY = "runningOnly";
+    /** Config property: AWS access key. */
     public static final String ACCESS_KEY = "accessKey";
+    /** Config property: AWS secret key. */
     public static final String SECRET_KEY = "secretKey";
+    /** Config property: key storage path of the AWS secret key. */
     public static final String SECRET_KEY_STORAGE_PATH = "secretKeyStoragePath";
+    /** Config property: ARN of the IAM role to assume. */
     public static final String ROLE_ARN = "assumeRoleArn";
+    /** Config property: ARN of the IAM role to assume with {@link #EXTERNAL_ID}. */
     public static final String ROLE_ARN_COMBINED_WITH_EXT_ID = "assumeRoleArnCombinedWithExternalId";
+    /** Config property: external ID used when assuming {@link #ROLE_ARN_COMBINED_WITH_EXT_ID}. */
     public static final String EXTERNAL_ID = "externalId";
+    /** Config property: AWS EC2 region. */
     public static final String REGION = "region";
+    /** Config property: path to a node attribute mapping file. */
     public static final String MAPPING_FILE = "mappingFile";
+    /** Config property: minimum seconds between AWS API requests, unless loading synchronously. */
     public static final String REFRESH_INTERVAL = "refreshInterval";
+    /** Config property: load nodes synchronously instead of refreshing in the background. */
     public static final String SYNCHRONOUS_LOAD = "synchronousLoad";
+    /** Config property: start from the default mapping definition. */
     public static final String USE_DEFAULT_MAPPING = "useDefaultMapping";
+    /** Config property: query node instances in parallel instead of one at a time. */
     public static final String QUERY_NODE_INSTANCES_IN_PARALLEL = "queryNodeInstancesInParallel";
+    /** Config property: HTTP proxy host name. */
     public static final String HTTP_PROXY_HOST = "httpProxyHost";
+    /** Config property: HTTP proxy port. */
     public static final String HTTP_PROXY_PORT = "httpProxyPort";
+    /** Config property: HTTP proxy user name. */
     public static final String HTTP_PROXY_USER = "httpProxyUser";
+    /** Config property: HTTP proxy password. */
     public static final String HTTP_PROXY_PASS = "httpProxyPass";
+    /** Config property: maximum number of reservations returned per AWS API call. */
     public static final String MAX_RESULTS = "pageResults";
+    /** Default value of {@link #MAX_RESULTS}. */
     public static final int MAX_RESULTS_DEFAULT = 100;
 
+    /**
+     * Create the factory.
+     */
     public EC2ResourceModelSourceFactory() {
 
     }
+    /**
+     * Create the factory. The framework is not used.
+     *
+     * @param framework the Rundeck framework
+     */
     public EC2ResourceModelSourceFactory(final Framework framework) {
     }
 
@@ -95,6 +126,9 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
      * invalid configuration never reaches the constructor and never allocates any resources.
      * Public so other callers that construct {@link EC2ResourceModelSource} directly (e.g.
      * rundeckpro's own factory) can get the same no-allocation guarantee.
+     *
+     * @param configuration plugin configuration to validate
+     * @throws ConfigurationException if an access key is set without a secret key or secret key storage path
      */
     public static void validateConfiguration(Properties configuration) throws ConfigurationException {
         String accessKey = configuration.getProperty(ACCESS_KEY);
@@ -109,13 +143,16 @@ public class EC2ResourceModelSourceFactory implements ResourceModelSourceFactory
         return null;
     }
 
+    /** Rendering options that show a property in the secondary "Proxy" group. */
     public static final Map<String, Object> PROXY_OPTIONS = Map.of(
             StringRenderingConstants.GROUP_NAME, "Proxy",
             StringRenderingConstants.GROUPING, "secondary"
     );
 
+    /** Rendering options that display a property as a password field. */
     public static final Map<String, Object> PASSWORD_OPTIONS = Collections.singletonMap(StringRenderingConstants.DISPLAY_TYPE_KEY, StringRenderingConstants.DisplayType.PASSWORD);
 
+    /** Plugin description, including its configuration properties. */
     public static final Description DESC = DescriptionBuilder.builder()
             .name(PROVIDER_NAME)
             .title("AWS EC2 Resources")

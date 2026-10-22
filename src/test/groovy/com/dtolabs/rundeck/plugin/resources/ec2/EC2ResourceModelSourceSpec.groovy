@@ -62,7 +62,7 @@ class EC2ResourceModelSourceSpec extends Specification {
         EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
         rms.mapper = Mock(InstanceToNodeMapper) {
             performQuery(_) >> new NodeSetImpl()
-            getQueryErrors() >> ["Error querying EC2 region endpoint 'https://ec2.us-west-1.amazonaws.com': access denied"]
+            getQueryErrors() >> ["https://ec2.us-west-1.amazonaws.com: access denied"]
         }
 
         when: "getNodes() performs the (always-synchronous, first-fetch) query"
@@ -78,6 +78,29 @@ class EC2ResourceModelSourceSpec extends Specification {
         errors[0].contains("us-west-1")
     }
 
+    def "getModelSourceErrors lists multiple per-region failures one per line, region first"() {
+        given:
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, "true")
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> new NodeSetImpl()
+            getQueryErrors() >> ["ap-south-1: access denied", "sa-east-1: access denied"]
+        }
+
+        when:
+        try {
+            rms.getNodes()
+        } finally {
+            rms.close()
+        }
+
+        then:
+        rms.getModelSourceErrors() == ["ap-south-1: access denied\nsa-east-1: access denied"]
+    }
+
     def "getModelSourceErrors reports partial per-region failures after a successful background refresh"() {
         given: "async loading, and a mapper whose query succeeds but recorded a per-region failure"
         def config = createDefaultConfig()
@@ -87,7 +110,7 @@ class EC2ResourceModelSourceSpec extends Specification {
         EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
         rms.mapper = Mock(InstanceToNodeMapper) {
             performQuery(_) >> new NodeSetImpl()
-            getQueryErrors() >> ["Error querying EC2 region endpoint 'https://ec2.us-west-1.amazonaws.com': access denied"]
+            getQueryErrors() >> ["https://ec2.us-west-1.amazonaws.com: access denied"]
         }
         // simulate an already-completed prior refresh so the next getNodes() call takes the async
         // (background executor) path rather than the synchronous first-fetch path

@@ -158,7 +158,7 @@ class InstanceToNodeMapper {
                                 // the total-failure check below can tell an all-interrupted parallel
                                 // query apart from a genuine, if empty, successful result.
                                 anyInterrupted = true;
-                                lastQueryErrors.add("Query for region '" + endpoint + "' was interrupted");
+                                lastQueryErrors.add(endpoint + ": query was interrupted");
                             } else {
                                 // getInstancesByRegion() only catches Exception, not Error, so a truly
                                 // unexpected failure (e.g. AssertionError, LinkageError) reaches here
@@ -241,8 +241,8 @@ class InstanceToNodeMapper {
             // stale-but-valid node set in place rather than wiping it to empty on a total outage.
             if (!endpoints.isEmpty() && lastQueryErrors.size() == endpoints.size()) {
                 throw new RuntimeException(
-                        "All " + endpoints.size() + " EC2 region queries failed: "
-                                + String.join("; ", lastQueryErrors));
+                        "All " + endpoints.size() + " EC2 region queries failed:\n"
+                                + String.join("\n", lastQueryErrors));
             }
         }
         else if(region != null){
@@ -323,20 +323,22 @@ class InstanceToNodeMapper {
             // ALL_REGIONS) must not discard nodes already fetched from other, working regions.
             // Both the sequential loop and the parallel-query Callables in performQuery() route
             // through this method, so isolating the failure here covers both call paths.
-            String message = "Error querying EC2 region endpoint '" + endpoint + "': " + detailOf(e);
+            // Region first, so one-per-line errors from many regions are easy to scan in the UI.
+            String message = endpoint + ": " + detailOf(e);
+            String logMessage = "Error querying EC2 region endpoint " + message;
             if (e instanceof SdkException) {
                 // WARN without the stack trace: under ALL_REGIONS with a region-restricted IAM
                 // policy, every disallowed region logs here on every refresh, and a full trace per
                 // region per cycle is noisy. The trace is still available at DEBUG for diagnostics.
-                logger.warn(message);
-                logger.debug(message, e);
+                logger.warn(logMessage);
+                logger.debug(logMessage, e);
             } else {
                 // Not a recognized AWS SDK failure (access denied, throttling, network, etc) --
                 // more likely a plugin defect (e.g. an NPE from an unexpected response shape) than a
                 // routine per-region error. Still isolated so other regions aren't affected, but
                 // logged at ERROR with a full stack trace so a real bug isn't mistaken for, and
                 // buried among, routine AWS unavailability.
-                logger.error(message, e);
+                logger.error(logMessage, e);
             }
             lastQueryErrors.add(message);
         }
@@ -361,8 +363,8 @@ class InstanceToNodeMapper {
      * leave the process in an unsafe state.
      */
     private void recordUnexpectedFailure(String endpoint, Throwable actual) {
-        String message = "Unexpected error retrieving region '" + endpoint + "' query result: " + detailOf(actual);
-        logger.error(message, actual);
+        String message = endpoint + ": unexpected error retrieving query result: " + detailOf(actual);
+        logger.error("Error querying EC2 region endpoint " + message, actual);
         lastQueryErrors.add(message);
     }
 
