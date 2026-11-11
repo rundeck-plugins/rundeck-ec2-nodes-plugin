@@ -585,6 +585,10 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
      * subclass's point of view, before its own fields have initialized.
      */
     private void releaseResources() {
+        // Before the HTTP client is closed, so an in-flight region query sees it and stops cleanly
+        if (null != mapper) {
+            mapper.close();
+        }
         executor.shutdownNow();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {

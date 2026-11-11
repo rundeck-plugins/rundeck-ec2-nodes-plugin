@@ -80,6 +80,13 @@ class InstanceToNodeMapper {
      */
     private final Queue<String> lastQueryErrors = new ConcurrentLinkedQueue<>();
 
+    /**
+     * Set by {@link #close()} when the owning node source is unloaded (e.g. project config reload).
+     * Its shared HTTP client is closed right after, so an in-flight {@link #performQuery(boolean)}
+     * must stop issuing AWS calls: any further call would fail with "Connection pool shut down".
+     */
+    private volatile boolean closed = false;
+
     private static final String[] extraInstanceMappingAttributes= {"imageName","region"};
 
     /**
@@ -91,6 +98,14 @@ class InstanceToNodeMapper {
         this.maxResults = maxResults;
     }
 
+
+    /**
+     * Signal that the owning source is closed: in-flight and later region queries stop making AWS calls
+     * and the result of the current {@link #performQuery(boolean)} is an empty, discardable node set.
+     */
+    void close() {
+        closed = true;
+    }
 
     /**
      * Perform the query and return the set of instances
@@ -218,6 +233,9 @@ class InstanceToNodeMapper {
                 }
             } else {
                 for (String endpoint : endpoints) {
+                    if (closed) {
+                        break;
+                    }
                     try {
                         instances.addAll(getInstancesByRegion(endpoint));
                     } catch (Error e) {
@@ -239,6 +257,10 @@ class InstanceToNodeMapper {
             // empty NodeSetImpl. This matches the pre-isolation behavior of propagating the failure,
             // so callers like EC2ResourceModelSource#getNodes() leave any previously-cached,
             // stale-but-valid node set in place rather than wiping it to empty on a total outage.
+            if (closed) {
+                logger.info("EC2 node source was closed during refresh (e.g. project config reload); discarding partial result");
+                return nodeSet;
+            }
             if (!endpoints.isEmpty() && lastQueryErrors.size() == endpoints.size()) {
                 throw new RuntimeException(
                         "All " + endpoints.size() + " EC2 region queries failed:\n"
@@ -295,6 +317,9 @@ class InstanceToNodeMapper {
 
     private Set<Ec2Instance> getInstancesByRegion(String endpoint) {
         Set<Ec2Instance> allInstances = new HashSet<>();
+        if (closed) {
+            return allInstances;
+        }
         try (Ec2Client ec2 = ec2Supplier.getEC2ForEndpoint(endpoint)) {
             DescribeAvailabilityZonesResponse zones = ec2.describeAvailabilityZones();
             final List<Filter> filters = buildFilters();
@@ -318,6 +343,13 @@ class InstanceToNodeMapper {
                 // is a runtime instanceof check rather than a dedicated catch clause.)
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
+            }
+            if (closed) {
+                // The source was closed mid-query, which closes the shared HTTP client under this call
+                // ("Connection pool shut down"). Expected during reload, not a plugin defect: no ERROR,
+                // no stack trace, and not recorded as a region failure.
+                logger.debug("EC2 region query for " + endpoint + " aborted: node source closed", e);
+                return allInstances;
             }
             // A single region failing (e.g. a policy that denies ec2:* outside one region under
             // ALL_REGIONS) must not discard nodes already fetched from other, working regions.

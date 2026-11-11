@@ -397,6 +397,29 @@ class InstanceToNodeMapperSpec extends Specification {
         parallel << [true, false]
     }
 
+    def "closing the mapper mid-query stops remaining regions and records no errors (no 'Connection pool shut down' failure)"() {
+        given: "closing the source closes the shared HTTP client, so the in-flight call fails with IllegalStateException"
+        def calls = []
+        def mapper
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForEndpoint(_) >> { String ep ->
+                calls << ep
+                mapper.close()
+                throw new IllegalStateException("Connection pool shut down")
+            }
+        }
+        mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint('https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com')
+
+        when:
+        def nodes = mapper.performQuery(false)
+
+        then: "no exception, empty result, later regions never queried, nothing reported as a region failure"
+        nodes.getNodeNames().isEmpty()
+        calls == ['https://ec2.us-west-1.amazonaws.com']
+        mapper.getQueryErrors().isEmpty()
+    }
+
     @Unroll
     def "every region denied throws rather than returning an empty result (parallel: #parallel)"() {
         given: "both us-west-1 and us-east-1 denied"
