@@ -410,6 +410,11 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
                     INodeSet result = mapper.performQuery(queryNodeInstancesInParallel);
                     lastQueryError = joinQueryErrors(mapper.getQueryErrors());
                     return result;
+                } catch (InstanceToNodeMapper.SourceClosedException e) {
+                    // closed mid-refresh (e.g. project config reload): expected, not a failure. Keep
+                    // the previously cached nodes and do not record an error.
+                    logger.debug("EC2 node refresh cancelled: node source closed");
+                    return iNodeSet;
                 } catch (Throwable e) {
                     // performQuery() deliberately lets a fatal VirtualMachineError/ThreadDeath from a
                     // region worker propagate rather than isolating it (see InstanceToNodeMapper); catch
@@ -431,6 +436,11 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
             try {
                 iNodeSet = mapper.performQuery(queryNodeInstancesInParallel);
                 lastQueryError = joinQueryErrors(mapper.getQueryErrors());
+            } catch (InstanceToNodeMapper.SourceClosedException e) {
+                // closed mid-refresh (e.g. project config reload): iNodeSet is left as-is, so any
+                // previously cached nodes are kept; expected, so no error is recorded or rethrown
+                logger.debug("EC2 node refresh cancelled: node source closed");
+                return iNodeSet;
             } catch (RuntimeException e) {
                 // e.g. every region failed under ALL_REGIONS/multi-endpoint: iNodeSet is left as-is
                 // (any previously-cached, stale-but-valid nodes are preserved) since the assignment
@@ -585,6 +595,10 @@ public class EC2ResourceModelSource implements ResourceModelSource, ResourceMode
      * subclass's point of view, before its own fields have initialized.
      */
     private void releaseResources() {
+        // Before the HTTP client is closed, so an in-flight region query sees it and stops cleanly
+        if (null != mapper) {
+            mapper.close();
+        }
         executor.shutdownNow();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
