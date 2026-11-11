@@ -397,7 +397,7 @@ class InstanceToNodeMapperSpec extends Specification {
         parallel << [true, false]
     }
 
-    def "closing the mapper mid-query stops remaining regions and records no errors (no 'Connection pool shut down' failure)"() {
+    def "closing the mapper mid-query stops remaining regions and signals cancellation instead of a result or failure"() {
         given: "closing the source closes the shared HTTP client, so the in-flight call fails with IllegalStateException"
         def calls = []
         def mapper
@@ -412,12 +412,73 @@ class InstanceToNodeMapperSpec extends Specification {
         mapper.setEndpoint('https://ec2.us-west-1.amazonaws.com, https://ec2.us-east-1.amazonaws.com')
 
         when:
-        def nodes = mapper.performQuery(false)
+        mapper.performQuery(false)
 
-        then: "no exception, empty result, later regions never queried, nothing reported as a region failure"
-        nodes.getNodeNames().isEmpty()
+        then: "cancellation (not an empty result that would replace cached nodes), later regions never queried"
+        thrown(InstanceToNodeMapper.SourceClosedException)
         calls == ['https://ec2.us-west-1.amazonaws.com']
+
+        and: "nothing reported as a region failure"
         mapper.getQueryErrors().isEmpty()
+    }
+
+    def "a mapper closed before the query makes no AWS calls, including ALL_REGIONS discovery"() {
+        given:
+        EC2Supplier supplier = Mock(EC2Supplier)
+        def mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint('ALL_REGIONS')
+        mapper.close()
+
+        when:
+        mapper.performQuery(false)
+
+        then:
+        thrown(InstanceToNodeMapper.SourceClosedException)
+        0 * supplier._(*_)
+    }
+
+    def "closing during ALL_REGIONS discovery is cancellation, not a leaked pool-shut-down failure"() {
+        given:
+        def mapper
+        Ec2Client ec2 = Mock(Ec2Client) {
+            describeRegions() >> { mapper.close(); throw new IllegalStateException("Connection pool shut down") }
+        }
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForDefaultRegion() >> ec2
+        }
+        mapper = new InstanceToNodeMapper(supplier, new Properties(), 100)
+        mapper.setEndpoint('ALL_REGIONS')
+
+        when:
+        mapper.performQuery(false)
+
+        then:
+        thrown(InstanceToNodeMapper.SourceClosedException)
+    }
+
+    def "closing during the image name lookup is cancellation, not a swallowed error with a partial result"() {
+        given:
+        def mapper
+        Ec2Client ec2 = Mock(Ec2Client) {
+            describeInstances(_) >> DescribeInstancesResponse.builder()
+                    .reservations(Reservation.builder().instances(mkInstance()).build())
+                    .build()
+            describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
+            describeImages(_) >> { mapper.close(); throw new IllegalStateException("Connection pool shut down") }
+        }
+        EC2Supplier supplier = Mock(EC2Supplier) {
+            getEC2ForRegion(_) >> ec2
+        }
+        Properties mapping = new Properties()
+        mapping.put("ami_image.selector", "imageName")
+        mapper = new InstanceToNodeMapper(supplier, mapping, 100)
+        mapper.setRegion("us-west-1")
+
+        when:
+        mapper.performQuery(false)
+
+        then:
+        thrown(InstanceToNodeMapper.SourceClosedException)
     }
 
     @Unroll

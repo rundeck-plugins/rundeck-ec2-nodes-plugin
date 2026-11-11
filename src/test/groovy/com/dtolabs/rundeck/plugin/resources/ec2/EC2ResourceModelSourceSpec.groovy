@@ -162,6 +162,41 @@ class EC2ResourceModelSourceSpec extends Specification {
         rms.getModelSourceErrors()[0].contains("All 2 EC2 region queries failed")
     }
 
+    def "a refresh cancelled because the source closed keeps the cached nodes and reports no error (sync: #sync)"() {
+        given:
+        def config = createDefaultConfig()
+        config.setProperty(EC2ResourceModelSourceFactory.ACCESS_KEY, "an-access-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SECRET_KEY, "a-secret-key")
+        config.setProperty(EC2ResourceModelSourceFactory.SYNCHRONOUS_LOAD, sync)
+        EC2ResourceModelSource rms = ec2ResourceModelSource(Mock(Services), config)
+        def cachedNodes = new NodeSetImpl()
+        rms.iNodeSet = cachedNodes
+        rms.lastRefresh = 1L
+        rms.mapper = Mock(InstanceToNodeMapper) {
+            performQuery(_) >> { throw new InstanceToNodeMapper.SourceClosedException(null) }
+        }
+
+        when:
+        def result = rms.getNodes()
+        if (sync == "false") {
+            // let the background refresh finish, then collect it
+            def deadline = System.currentTimeMillis() + 5000
+            while (rms.futureResult != null && !rms.futureResult.isDone() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10)
+            }
+            result = rms.getNodes()
+        }
+        rms.close()
+
+        then: "no exception, the previously cached nodes are still served, and no error is recorded"
+        noExceptionThrown()
+        result.is(cachedNodes)
+        rms.getModelSourceErrors().isEmpty()
+
+        where:
+        sync << ["true", "false"]
+    }
+
     def "a fatal VM error from a background refresh propagates out of checkFuture() instead of being discarded"() {
         given: "async loading, and a mapper whose query fails with a VirtualMachineError rather than an ordinary exception"
         def config = createDefaultConfig()

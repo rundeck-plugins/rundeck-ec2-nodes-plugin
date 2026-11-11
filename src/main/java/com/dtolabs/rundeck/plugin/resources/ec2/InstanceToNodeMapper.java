@@ -101,17 +101,48 @@ class InstanceToNodeMapper {
 
     /**
      * Signal that the owning source is closed: in-flight and later region queries stop making AWS calls
-     * and the result of the current {@link #performQuery(boolean)} is an empty, discardable node set.
+     * and {@link #performQuery(boolean)} throws {@link SourceClosedException}.
      */
     void close() {
         closed = true;
     }
 
     /**
+     * Thrown by {@link #performQuery(boolean)} when the mapper was {@link #close() closed} before or
+     * during the query. This is a cancellation, not a failure and not a (possibly empty) result:
+     * callers must neither replace previously cached nodes with it nor report it as an error.
+     */
+    static class SourceClosedException extends RuntimeException {
+        SourceClosedException(Throwable cause) {
+            super("EC2 node source was closed during refresh", cause);
+        }
+    }
+
+    /**
      * Perform the query and return the set of instances
      *
+     * @throws SourceClosedException if the mapper was closed before or during the query: the caller
+     *                               should keep any previously cached nodes
      */
     public NodeSetImpl performQuery(boolean queryNodeInstancesInParallel) {
+        if (closed) {
+            throw new SourceClosedException(null);
+        }
+        try {
+            return doPerformQuery(queryNodeInstancesInParallel);
+        } catch (SourceClosedException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            if (closed) {
+                // Any failure after close (region discovery, single-region or default-region query,
+                // an interrupted worker) is the shared HTTP client closing under the call.
+                throw new SourceClosedException(e);
+            }
+            throw e;
+        }
+    }
+
+    private NodeSetImpl doPerformQuery(boolean queryNodeInstancesInParallel) {
         lastQueryErrors.clear();
         final NodeSetImpl nodeSet = new NodeSetImpl();
 
@@ -258,8 +289,7 @@ class InstanceToNodeMapper {
             // so callers like EC2ResourceModelSource#getNodes() leave any previously-cached,
             // stale-but-valid node set in place rather than wiping it to empty on a total outage.
             if (closed) {
-                logger.info("EC2 node source was closed during refresh (e.g. project config reload); discarding partial result");
-                return nodeSet;
+                throw new SourceClosedException(null);
             }
             if (!endpoints.isEmpty() && lastQueryErrors.size() == endpoints.size()) {
                 throw new RuntimeException(
@@ -287,6 +317,9 @@ class InstanceToNodeMapper {
 
                 instances = addExtraMappingAttribute(ec2, query(ec2, request), zones);
             }
+        }
+        if (closed) {
+            throw new SourceClosedException(null);
         }
         mapInstances(nodeSet, instances);
         return nodeSet;
@@ -916,7 +949,13 @@ class InstanceToNodeMapper {
                 ec2Images.put(image.imageId(),image);
             }
         }catch(Exception e){
-            logger.error("error getting image info: {}", e.getMessage(), e);
+            if (closed) {
+                // closed mid-query: shared HTTP client is gone ("Connection pool shut down"); the
+                // query is cancelled by performQuery(), so this is expected, not an error
+                logger.debug("image lookup aborted: node source closed", e);
+            } else {
+                logger.error("error getting image info: {}", e.getMessage(), e);
+            }
         }
 
         for (final Ec2Instance inst : originalInstances) {
