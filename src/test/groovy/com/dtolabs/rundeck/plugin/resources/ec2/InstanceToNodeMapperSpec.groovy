@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.ec2.model.Placement
 import software.amazon.awssdk.services.ec2.model.Region
 import software.amazon.awssdk.services.ec2.model.Reservation
 import software.amazon.awssdk.services.ec2.model.Tag
+import spock.mock.MockMakers
 import spock.lang.Specification
 import spock.util.concurrent.PollingConditions
 import spock.lang.Unroll
@@ -182,7 +183,7 @@ class InstanceToNodeMapperSpec extends Specification {
         DescribeInstancesResponse instancesResponse = DescribeInstancesResponse.builder()
                 .reservations(Reservation.builder().instances(instance).build())
                 .build()
-        Ec2Client ec2 = Mock(Ec2Client){
+        Ec2Client ec2 = Mock(Ec2Client, mockMaker: MockMakers.byteBuddy){
             describeInstances(_) >> instancesResponse
             describeImages(_) >> DescribeImagesResponse.builder().images(image).build()
             describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
@@ -219,7 +220,7 @@ class InstanceToNodeMapperSpec extends Specification {
         DescribeInstancesResponse instancesResponse = DescribeInstancesResponse.builder()
                 .reservations(Reservation.builder().instances(instance).build())
                 .build()
-        Ec2Client ec2 = Mock(Ec2Client){
+        Ec2Client ec2 = Mock(Ec2Client, mockMaker: MockMakers.byteBuddy){
             describeInstances(_) >> instancesResponse
             describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
         }
@@ -253,7 +254,7 @@ class InstanceToNodeMapperSpec extends Specification {
         DescribeInstancesResponse instancesResponse = DescribeInstancesResponse.builder()
                 .reservations(Reservation.builder().instances(instance).build())
                 .build()
-        Ec2Client ec2 = Mock(Ec2Client){
+        Ec2Client ec2 = Mock(Ec2Client, mockMaker: MockMakers.byteBuddy){
             describeInstances(_) >> instancesResponse
             describeImages(_) >> DescribeImagesResponse.builder().images(image).build()
             describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().availabilityZones(zone1).build()
@@ -296,7 +297,7 @@ class InstanceToNodeMapperSpec extends Specification {
                         .regionName(region)
                         .zoneName("${region}a".toString())
                         .build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(mkInstance(region)).build())
                             .build()
@@ -339,7 +340,7 @@ class InstanceToNodeMapperSpec extends Specification {
                 def instance = mkInstance(region).toBuilder()
                         .instanceId("aninstanceId-${region}".toString())
                         .build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(instance).build())
                             .build()
@@ -370,7 +371,7 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
                 def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(instance).build())
                             .build()
@@ -517,7 +518,7 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
                 def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(instance).build())
                             .build()
@@ -551,7 +552,7 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
                 def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(instance).build())
                             .build()
@@ -591,7 +592,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeAvailabilityZones() >> {
                         startedLatch.countDown()
                         releaseLatch.await()
@@ -646,7 +647,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeAvailabilityZones() >> {
                         // Cancellation via future.cancel(true) is only best-effort: a worker blocked
                         // in an uninterruptible call (e.g. raw socket I/O) can simply ignore the
@@ -735,7 +736,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint('https://ec2.us-west-1.amazonaws.com') >> {
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeAvailabilityZones() >> {
                         startedLatch.countDown()
                         releaseLatch.await()
@@ -745,7 +746,7 @@ class InstanceToNodeMapperSpec extends Specification {
             }
             getEC2ForEndpoint('https://ec2.us-east-1.amazonaws.com') >> {
                 def instance = mkInstance('us-east-1').toBuilder().instanceId("aninstanceId-us-east-1").build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(instance).build())
                             .build()
@@ -790,7 +791,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint(_) >> {
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeAvailabilityZones() >> {
                         startedLatch.countDown()
                         releaseLatch.await()
@@ -838,7 +839,7 @@ class InstanceToNodeMapperSpec extends Specification {
         def endpoints = ['https://ec2.us-west-1.amazonaws.com', 'https://ec2.us-east-1.amazonaws.com']
         EC2Supplier supplier = Mock(EC2Supplier) {
             getEC2ForEndpoint(_) >> {
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeAvailabilityZones() >> DescribeAvailabilityZonesResponse.builder().build()
                     describeInstances(_) >> {
                         startedLatch.countDown()
@@ -906,7 +907,7 @@ class InstanceToNodeMapperSpec extends Specification {
         Image image = mkImage()
 
         EC2Supplier supplier = Mock(EC2Supplier) {
-            1 * getEC2ForDefaultRegion() >> Mock(Ec2Client) {
+            1 * getEC2ForDefaultRegion() >> Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                 1 * describeRegions() >> DescribeRegionsResponse.builder()
                         .regions(regions.collect({ r ->
                             // Real AWS DescribeRegions responses return a bare hostname with no
@@ -926,7 +927,7 @@ class InstanceToNodeMapperSpec extends Specification {
                         .regionName(region)
                         .zoneName("${region}a".toString())
                         .build()
-                Mock(Ec2Client) {
+                Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
                     describeInstances(_) >> DescribeInstancesResponse.builder()
                             .reservations(Reservation.builder().instances(mkInstance(region)).build())
                             .build()

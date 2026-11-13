@@ -20,7 +20,7 @@ ext.developers = [
 ]
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_25
     withJavadocJar()
     withSourcesJar()
 }
@@ -141,7 +141,7 @@ jar {
 
 test {
     useJUnitPlatform()
-    // Java 17 requires these for cglib/Spock mocking
+    // Spock's byte-buddy mock maker needs these opens to mock classes
     jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
             '--add-opens', 'java.base/java.util=ALL-UNNAMED'
 }
