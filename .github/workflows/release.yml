@@ -3,6 +3,7 @@ on:
     # Sequence of patterns matched against refs/tags
     tags:
       - '*.*.*' # Push events to matching semver tags (no v prefix)
+      - '!*-alpha*'
 
 name: Upload Release Asset
 
@@ -14,6 +15,8 @@ jobs:
       PKGCLD_REPO_URL: ${{ vars.PKGCLD_REPO_URL }}
     steps:
       - uses: rundeck-plugins/.github/.github/actions/setup-java@main
+        with:
+          java-version: '25'
       - name: Build with Gradle
         run: ./gradlew build
       - name: Get Release Version
