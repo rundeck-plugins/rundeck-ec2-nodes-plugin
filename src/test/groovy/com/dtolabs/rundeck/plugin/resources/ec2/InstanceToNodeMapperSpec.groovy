@@ -441,7 +441,7 @@ class InstanceToNodeMapperSpec extends Specification {
     def "closing during ALL_REGIONS discovery is cancellation, not a leaked pool-shut-down failure"() {
         given:
         def mapper
-        Ec2Client ec2 = Mock(Ec2Client) {
+        Ec2Client ec2 = Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
             describeRegions() >> { mapper.close(); throw new IllegalStateException("Connection pool shut down") }
         }
         EC2Supplier supplier = Mock(EC2Supplier) {
@@ -460,7 +460,7 @@ class InstanceToNodeMapperSpec extends Specification {
     def "closing during the image name lookup is cancellation, not a swallowed error with a partial result"() {
         given:
         def mapper
-        Ec2Client ec2 = Mock(Ec2Client) {
+        Ec2Client ec2 = Mock(Ec2Client, mockMaker: MockMakers.byteBuddy) {
             describeInstances(_) >> DescribeInstancesResponse.builder()
                     .reservations(Reservation.builder().instances(mkInstance()).build())
                     .build()
